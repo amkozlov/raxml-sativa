@@ -2726,24 +2726,27 @@ static void checkSequences(tree *tr, rawdata *rdta, analdef *adef)
     }
 
 
-  for(i = 1; i < n; i++)
+  if (adef->checkForDuplicateSequences)
     {
-      if(omissionList[i] == 0)
+      for(i = 1; i < n; i++)
 	{
-	  tipI = &(rdta->y[i][1]);
-
-	  for(j = i + 1; j < n; j++)
+	  if(omissionList[i] == 0)
 	    {
-	      if(omissionList[j] == 0)
-		{
-		  tipJ = &(rdta->y[j][1]);
-		  if(sequenceSimilarity(tipI, tipJ, rdta->sites))
-		    {
-		      if(processID == 0 && !adef->silent)
-			printBothOpen("\n\nIMPORTANT WARNING: Sequences %s and %s are exactly identical\n", tr->nameList[i], tr->nameList[j]);
+	      tipI = &(rdta->y[i][1]);
 
-		      omissionList[j] = 1;
-		      count++;
+	      for(j = i + 1; j < n; j++)
+		{
+		  if(omissionList[j] == 0)
+		    {
+		      tipJ = &(rdta->y[j][1]);
+		      if(sequenceSimilarity(tipI, tipJ, rdta->sites))
+			{
+			  if(processID == 0 && !adef->silent)
+			    printBothOpen("\n\nIMPORTANT WARNING: Sequences %s and %s are exactly identical\n", tr->nameList[i], tr->nameList[j]);
+
+			  omissionList[j] = 1;
+			  count++;
+			}
 		    }
 		}
 	    }
@@ -3487,6 +3490,7 @@ static void initAdef(analdef *adef)
   adef->leaveDropMode          = FALSE;
   adef->slidingWindowSize      = 100;
   adef->checkForUndeterminedSequences = TRUE;
+  adef->checkForDuplicateSequences = TRUE;
   adef->useQuartetGrouping = FALSE;
   adef->alignmentFileType = PHYLIP;
   adef->calculateIC = FALSE;
@@ -4679,6 +4683,9 @@ static void printMinusFUsage(void)
 
   printf("              \"-f o\": old and slower rapid hill-climbing without heuristic cutoff\n");
 
+  printf("              \"-f O\": perform EPA leave-one-out test: prune each taxon from a given reference tree passed via \"-t\" \n");
+  printf("                      and insert it back using the Evolutionary Placement algorithm. \n");
+
   printf("              \"-f p\": perform pure stepwise MP addition of new sequences to an incomplete starting tree and exit\n");
 
   printf("              \"-f P\": perform a phylogenetic placement of sub trees specified in a file passed via \"-z\" into a given reference tree\n");
@@ -5375,7 +5382,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
   while(1)
     {      
       static struct 
-	option long_options[16] =
+	option long_options[17] =
 	{	 
 	  {"mesquite",                  no_argument,       &flag, 1},
 	  {"silent",                    no_argument,       &flag, 1},
@@ -5392,6 +5399,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 	  {"HKY85",                     no_argument,       &flag, 1},
 	  {"asc-miss",                  required_argument, &flag, 1},	 	 
 	  {"set-thread-affinity",       no_argument,       &flag, 1},
+	  {"no-dup-check", 		no_argument, 	   &flag, 1},
 	  {0, 0, 0, 0}
 	};
       
@@ -5400,7 +5408,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
       
       flag = 0;
       
-      c = getopt_long(argc,argv, "R:T:E:N:B:L:P:S:Y:A:G:I:J:K:W:l:x:z:g:r:e:a:b:c:f:i:m:t:w:s:n:o:q:#:p:vudyjhHkMDFQUOVCX", long_options, &option_index/*&optind, &optarg*/);
+      c = getopt_long(argc,argv, "R:T:E:N:B:L:P:O:S:Y:A:G:I:J:K:W:l:x:z:g:r:e:a:b:c:f:i:m:t:w:s:n:o:q:#:p:vudyjhHkMDFQUOVCX", long_options, &option_index/*&optind, &optarg*/);
          
       if(c == -1)
 	break;          
@@ -5597,6 +5605,9 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 #else
 	      printf("Warning: flag --set-thread-affinity has no effect if you don't use the hybrid MPI-PThreads version\n");
 #endif
+	      break;
+	    case 15:
+	      adef->checkForDuplicateSequences = FALSE;
 	      break;
 	    default:
 	      if(flagCheck)
@@ -6129,12 +6140,17 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 		adef->mode = BIG_RAPID_MODE;
 		tr->doCutoff = FALSE;
 		break;
+	      case 'O':
+	        adef->mode = EPA_LEAVE_ONE_OUT;
+	        tr->perPartitionEPA = FALSE;
+	        break;
 	      case 'p':
 		adef->mode =  PARSIMONY_ADDITION;
 		break;
 	      case 'P':
 		adef->mode =  SUBTREE_EPA;
 		tr->doSubtreeEPA = TRUE;
+	        tr->perPartitionEPA = FALSE;
 		break;
 	      case 'q':
 		adef->mode = QUARTET_CALCULATION;
@@ -7269,6 +7285,9 @@ static void printModelAndProgramInfo(tree *tr, analdef *adef, int argc, char *ar
 	  break;
 	case SUBTREE_EPA:
 	  printBoth(infoFile, "\nRAxML Evolutionary Placement Algorithm for (taxonomic) subtrees\n\n");
+	  break;
+	case EPA_LEAVE_ONE_OUT:
+	  printBoth(infoFile, "\nRAxML EPA leave-one-out test\n\n");
 	  break;
 	default:
 	  assert(0);
@@ -13269,6 +13288,16 @@ int main (int argc, char *argv[])
 
 	  subtreeEPA(tr, adef);
 	  assert(0);
+	  break;
+	case EPA_LEAVE_ONE_OUT:
+	  if(adef->useBinaryModelFile)
+	      readBinaryModel(tr, adef);
+	  else
+	      initModel(tr, rdta, cdta, adef);
+
+	  getStartingTree(tr, adef);
+	  leaveOneOutTest(tr, adef);
+	  exit(0);
 	  break;
 	case CLASSIFY_MP:
 	  getStartingTree(tr, adef);

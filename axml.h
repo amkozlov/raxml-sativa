@@ -204,6 +204,7 @@
 #define  ROOT_TREE                       28
 #define  STEAL_BRANCH_LENGTHS            29
 #define  SUBTREE_EPA                     30
+#define  EPA_LEAVE_ONE_OUT               31
 
 #define AUTO_ML   0
 #define AUTO_BIC  1
@@ -1163,6 +1164,7 @@ typedef  struct {
   boolean       leaveDropMode;
   int           slidingWindowSize;
   boolean       checkForUndeterminedSequences;
+  boolean       checkForDuplicateSequences;
   boolean       useQuartetGrouping;
   int           alignmentFileType;
   boolean       calculateIC;
@@ -1269,6 +1271,7 @@ extern void doAllInOne ( tree *tr, analdef *adef );
 extern void classifyML(tree *tr, analdef *adef) __attribute__((noreturn));
 extern void classifyMP(tree *tr, analdef *adef);
 extern void subtreeEPA(tree *tr, analdef *adef) __attribute__((noreturn));
+extern void leaveOneOutTest(tree *tr, analdef *adef);
 extern void collectSubtrees(tree *tr, nodeptr *subtrees, int *count, int ogn);
 extern int treeFindTipByLabelString(char  *str, tree *tr, boolean check);
 extern ssize_t rax_getline(char **lineptr, size_t *n, FILE *h);

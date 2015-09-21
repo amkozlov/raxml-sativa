@@ -837,10 +837,16 @@ static size_t getContiguousScalingLength(tree *tr)
     length = 0;
   
   int 
-    model;
+    model,
+    rateHet;
+
+  if(tr->rateHetModel == CAT)
+	rateHet = 1;
+  else
+	rateHet = 4;
 
   for(model = 0; model < tr->NumberOfModels; model++)    
-    length += tr->partitionData[model].upper - tr->partitionData[model].lower;
+    length += (tr->partitionData[model].upper - tr->partitionData[model].lower) * rateHet;
 
   return length;
 }
@@ -863,7 +869,7 @@ static void allocBranchX(tree *tr)
     }
 }
 
-static void updateClassify(tree *tr, double *z, boolean *partitionSmoothed, boolean *partitionConverged, double *x1, double *x2, unsigned char *tipX1, unsigned char *tipX2, int tipCase, int insertions)
+static void updateClassify(tree *tr, double *z, boolean *partitionSmoothed, boolean *partitionConverged, double *x1, double *x2, unsigned char *tipX1, unsigned char *tipX2, int tipCase, int insertions, int *ex1, int *ex2)
 {   
   int i;
 
@@ -876,7 +882,7 @@ static void updateClassify(tree *tr, double *z, boolean *partitionSmoothed, bool
   for(i = 0; i < tr->numBranches; i++)   
     z0[i] = z[i];          
 
-  makenewzClassify(tr, newzpercycle, newz, z0, x1, x2, tipX1, tipX2, tipCase, partitionConverged, insertions); 
+  makenewzClassify(tr, newzpercycle, newz, z0, x1, x2, tipX1, tipX2, tipCase, partitionConverged, insertions, ex1, ex2);
 
 #ifdef _BASTIEN
   assert(0);
@@ -994,7 +1000,7 @@ static double localSmoothClassify (tree *tr, int maxtimes, int leftNodeNumber, i
       x2    = tr->temporaryVector;
       tipX1 = tr->contiguousTips[insertionNodeNumber];
 
-      updateClassify(tr, e3, partitionSmoothed, partitionConverged, x1, x2, tipX1, tipX2, tipCase, insertions);
+      updateClassify(tr, e3, partitionSmoothed, partitionConverged, x1, x2, tipX1, tipX2, tipCase, insertions, ex1, ex2);
 
       /* e1 **********************************************************/
 
@@ -1026,10 +1032,11 @@ static double localSmoothClassify (tree *tr, int maxtimes, int leftNodeNumber, i
 	{
 	  tipCase = INNER_INNER;
 
-	  x1      =  b->epa->left;
+	  x1      = b->epa->left;
+	  ex1 	  = b->epa->leftScaling;
 	}
 
-      updateClassify(tr, e1, partitionSmoothed, partitionConverged, x1, x3, tipX1, (unsigned char*)NULL, tipCase, insertions);
+      updateClassify(tr, e1, partitionSmoothed, partitionConverged, x1, x3, tipX1, (unsigned char*)NULL, tipCase, insertions, ex1, ex3);
 
       /* e2 *********************************************************/
 
@@ -1062,9 +1069,10 @@ static double localSmoothClassify (tree *tr, int maxtimes, int leftNodeNumber, i
 	  tipCase = INNER_INNER;
 
 	  x1      =  b->epa->right;
+	  ex1 	  =  b->epa->rightScaling;
 	}
 
-      updateClassify(tr, e2, partitionSmoothed, partitionConverged, x1, x3, tipX1, (unsigned char*)NULL, tipCase, insertions);
+      updateClassify(tr, e2, partitionSmoothed, partitionConverged, x1, x3, tipX1, (unsigned char*)NULL, tipCase, insertions, ex1, ex3);
 
 
       allSmoothed = TRUE;

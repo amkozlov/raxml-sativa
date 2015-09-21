@@ -2080,10 +2080,25 @@ static void sumGAMMA_GAPPED_SAVE(int tipCase, double *sumtable, double *x1_start
 
 
 static void sumGAMMA(int tipCase, double *sumtable, double *x1_start, double *x2_start, double *tipVector,
-		     unsigned char *tipX1, unsigned char *tipX2, int n)
+		     unsigned char *tipX1, unsigned char *tipX2, int n, int* ex1, int* ex2)
 {
   double *x1, *x2, *sum;
   int i, j, k;
+
+#ifdef __SIM_SSE3
+  __m128d v1;
+
+  __m128d minlhv[5];
+  minlhv[0] = _mm_set1_pd(1.0);
+  minlhv[1] = _mm_set1_pd(minlikelihood);
+  minlhv[2] = _mm_set1_pd(minlikelihood * minlikelihood);
+  minlhv[3] = _mm_set1_pd(minlikelihood * minlikelihood * minlikelihood);
+  minlhv[4] = _mm_set1_pd(minlikelihood * minlikelihood * minlikelihood * minlikelihood);
+#else
+  double minlhv[5] = {1.0, minlikelihood, minlikelihood * minlikelihood,
+      minlikelihood * minlikelihood * minlikelihood, minlikelihood * minlikelihood * minlikelihood * minlikelihood};
+#endif
+
 
   /* C-OPT once again switch over possible configurations at inner node */
 
@@ -2113,14 +2128,51 @@ static void sumGAMMA(int tipCase, double *sumtable, double *x1_start, double *x2
 	  x1  = &(tipVector[4 * tipX1[i]]);
 	  x2  = &x2_start[16 * i];
 	  sum = &sumtable[16 * i];
+
+	  int ex2_min = ex2[i * 4];
+	  for(j = 1; j < 4; j++)
+	    if (ex2[i * 4 + j] < ex2_min)
+	      ex2_min = ex2[i * 4 + j];
+
 #ifndef __SIM_SSE3
 	  for(j = 0; j < 4; j++)
-	    for(k = 0; k < 4; k++)
-	      sum[j * 4 + k] = x1[k] * x2[j * 4 + k];
+	    {
+	      int scalings = MIN(ex2[i * 4 + j] - ex2_min, 4);
+
+	      for(k = 0; k < 4; k++)
+		sum[j * 4 + k] = x1[k] * x2[j * 4 + k] * minlhv[scalings];
+	    }
 #else
-	  for(j = 0; j < 4; j++)	    
-	    for(k = 0; k < 4; k+=2)
-	      _mm_store_pd( &sum[j*4 + k], _mm_mul_pd( _mm_load_pd( &x1[k] ), _mm_load_pd( &x2[j * 4 + k] )));
+	  for(j = 0; j < 4; j++)
+	    {
+	      int scalings = MIN(ex2[i * 4 + j] - ex2_min, 4);
+
+	      v1 = _mm_mul_pd( _mm_load_pd( &x1[0] ), _mm_load_pd( &x2[j * 4 + 0] ));
+//	      for(k = 0; k < scalings; k++)
+//		v1 = _mm_mul_pd(v1, minlhv);
+
+	        v1 = _mm_mul_pd(v1, minlhv[scalings]);
+
+	      _mm_store_pd( &sum[j*4 + 0], v1);
+
+	      v1 = _mm_mul_pd( _mm_load_pd( &x1[2] ), _mm_load_pd( &x2[j * 4 + 2] ));
+//	      for(k = 0; k < scalings; k++)
+//		v1 = _mm_mul_pd(v1, minlhv);
+
+  	        v1 = _mm_mul_pd(v1, minlhv[scalings]);
+
+	      _mm_store_pd( &sum[j*4 + 2], v1);
+	    }
+
+//	   if (ex2[i * 4 + j] > ex2_min)
+//	      {
+////		printf("TI: %d %d\n", ex2[i * 4 + j], ex2_min);
+//		_mm_store_pd( &sum[j*4 + 0], minlhv);
+//		_mm_store_pd( &sum[j*4 + 2], minlhv);
+//	      }
+//	    else
+//	      for(k = 0; k < 4; k+=2)
+//		_mm_store_pd( &sum[j*4 + k], _mm_mul_pd( _mm_load_pd( &x1[k] ), _mm_load_pd( &x2[j * 4 + k] )));
 #endif
 	}
       break;
@@ -2130,14 +2182,39 @@ static void sumGAMMA(int tipCase, double *sumtable, double *x1_start, double *x2
 	  x1  = &x1_start[16 * i];
 	  x2  = &x2_start[16 * i];
 	  sum = &sumtable[16 * i];
+
+	  int ex_min = ex1[i * 4] + ex2[i * 4];
+	  for(j = 1; j < 4; j++)
+	    if (ex1[i * 4 + j] + ex2[i * 4 + j] < ex_min)
+	      ex_min = ex1[i * 4 + j] + ex2[i * 4 + j];
+
 #ifndef __SIM_SSE3
 	  for(j = 0; j < 4; j++)
-	    for(k = 0; k < 4; k++)
-	      sum[j * 4 + k] = x1[j * 4 + k] * x2[j * 4 + k];
+	    {
+	      int scalings = MIN(ex1[i * 4 + j] + ex2[i * 4 + j] - ex_min, 4);
+
+	      for(k = 0; k < 4; k++)
+		sum[j * 4 + k] = x1[j * 4 + k] * x2[j * 4 + k] * minlhv[scalings];
+	    }
 #else
-	   for(j = 0; j < 4; j++)	    
-	    for(k = 0; k < 4; k+=2)
-	      _mm_store_pd( &sum[j*4 + k], _mm_mul_pd( _mm_load_pd( &x1[j * 4 + k] ), _mm_load_pd( &x2[j * 4 + k] )));
+	  for(j = 0; j < 4; j++)
+	    {
+	      int scalings = MIN(ex1[i * 4 + j] + ex2[i * 4 + j] - ex_min, 4);
+
+              v1 = _mm_mul_pd( _mm_load_pd( &x1[j * 4 + 0] ), _mm_load_pd( &x2[j * 4 + 0] ));
+//	      for(k = 0; k < scalings; k++)
+//		v1 = _mm_mul_pd(v1, minlhv);
+              v1 = _mm_mul_pd(v1, minlhv[scalings]);
+
+	      _mm_store_pd( &sum[j*4 + 0], v1);
+
+	      v1 = _mm_mul_pd( _mm_load_pd( &x1[j * 4 + 2] ), _mm_load_pd( &x2[j * 4 + 2] ));
+//	      for(k = 0; k < scalings; k++)
+//		v1 = _mm_mul_pd(v1, minlhv);
+  	        v1 = _mm_mul_pd(v1, minlhv[scalings]);
+	      _mm_store_pd( &sum[j*4 + 2], v1);
+	    }
+
 #endif
 	}
       break;
@@ -3850,7 +3927,8 @@ static void coreGTRGAMMASECONDARYINVAR_7(double *gammaRates, double *EIGN, doubl
 
 
 static void getVects(tree *tr, unsigned char **tipX1, unsigned char **tipX2, double **x1_start, double **x2_start, int *tipCase, int model,
-		     double **x1_gapColumn, double **x2_gapColumn, unsigned int **x1_gap, unsigned int **x2_gap,  double **x1_start_asc, double **x2_start_asc)
+		     double **x1_gapColumn, double **x2_gapColumn, unsigned int **x1_gap, unsigned int **x2_gap,  double **x1_start_asc, double **x2_start_asc,
+		     int **ex1, int **ex2)
 {
   int 
     rateHet,
@@ -3866,10 +3944,13 @@ static void getVects(tree *tr, unsigned char **tipX1, unsigned char **tipX2, dou
   *x1_start_asc = (double*)NULL;
   *x2_start_asc = (double*)NULL;
   
-  *x1_start = (double*)NULL,
+  *x1_start = (double*)NULL;
   *x2_start = (double*)NULL;
   
-  *tipX1 = (unsigned char*)NULL,
+  *ex1 = (int*)NULL;
+  *ex2 = (int*)NULL;
+
+  *tipX1 = (unsigned char*)NULL;
   *tipX2 = (unsigned char*)NULL;
 
   if(isTip(pNumber, tr->mxtips) || isTip(qNumber, tr->mxtips))
@@ -3881,6 +3962,8 @@ static void getVects(tree *tr, unsigned char **tipX1, unsigned char **tipX2, dou
 	    {
 	      *tipX1 = tr->partitionData[model].yVector[qNumber];
 	      *x2_start = tr->partitionData[model].xVector[pNumber - tr->mxtips - 1];
+
+	      *ex2 = tr->partitionData[model].expVector[pNumber - tr->mxtips - 1];
 	      
 #ifdef _USE_PTHREADS
 	      if(tr->partitionData[model].ascBias && tr->threadID == 0)
@@ -3901,6 +3984,9 @@ static void getVects(tree *tr, unsigned char **tipX1, unsigned char **tipX2, dou
 	    {
 	      *tipX1 = tr->partitionData[model].yVector[pNumber];
 	      *x2_start = tr->partitionData[model].xVector[qNumber - tr->mxtips - 1];
+
+	      *ex2 = tr->partitionData[model].expVector[qNumber - tr->mxtips - 1];
+
 	      
 #ifdef _USE_PTHREADS
 	      if(tr->partitionData[model].ascBias && tr->threadID == 0)
@@ -3932,6 +4018,9 @@ static void getVects(tree *tr, unsigned char **tipX1, unsigned char **tipX2, dou
 
       *x1_start = tr->partitionData[model].xVector[pNumber - tr->mxtips - 1];
       *x2_start = tr->partitionData[model].xVector[qNumber - tr->mxtips - 1];
+
+      *ex1 = tr->partitionData[model].expVector[pNumber - tr->mxtips - 1];
+      *ex2 = tr->partitionData[model].expVector[qNumber - tr->mxtips - 1];
 
 
 #ifdef _USE_PTHREADS
@@ -3980,7 +4069,11 @@ void makenewzIterative(tree *tr)
   unsigned int
     *x1_gap = (unsigned int*)NULL,
     *x2_gap = (unsigned int*)NULL;			      
- 
+
+  int
+    *ex1,
+    *ex2;
+
   newviewIterative(tr);
 
   for(model = 0; model < tr->NumberOfModels; model++)
@@ -3995,7 +4088,7 @@ void makenewzIterative(tree *tr)
 	    states = tr->partitionData[model].states;
 
 	 
-	  getVects(tr, &tipX1, &tipX2, &x1_start, &x2_start, &tipCase, model, &x1_gapColumn, &x2_gapColumn, &x1_gap, &x2_gap, &x1_start_asc, &x2_start_asc);
+	  getVects(tr, &tipX1, &tipX2, &x1_start, &x2_start, &tipCase, model, &x1_gapColumn, &x2_gapColumn, &x1_gap, &x2_gap, &x1_start_asc, &x2_start_asc, &ex1, &ex2);
 	 
 
 	  switch(tr->partitionData[model].dataType)
@@ -4043,7 +4136,7 @@ void makenewzIterative(tree *tr)
 			  sumGAMMA(tipCase, tr->partitionData[model].sumBuffer, x1_start, x2_start, tr->partitionData[model].tipVector_TIP, tipX1, tipX2, width);
 #else
 			  sumGAMMA(tipCase, tr->partitionData[model].sumBuffer, x1_start, x2_start, tr->partitionData[model].tipVector, tipX1, tipX2,
-				   width);			  
+				   width, ex1, ex2);
 #endif			  
 		      }
 		  break;
@@ -4819,7 +4912,7 @@ static void topLevelMakenewz(tree *tr, double *z0, int _maxiter, double *result)
 
 #ifdef _USE_PTHREADS
 
-static void sumClassify(tree *tr, int tipCase, double *_x1, double *_x2, unsigned char *_tipX1, unsigned char *_tipX2, boolean *executeModel)
+static void sumClassify(tree *tr, int tipCase, double *_x1, double *_x2, unsigned char *_tipX1, unsigned char *_tipX2, boolean *executeModel, int *ex1, int *ex2)
 {
   int 
     model = 0,
@@ -4899,7 +4992,7 @@ static void sumClassify(tree *tr, int tipCase, double *_x1, double *_x2, unsigne
 		case GAMMA:
 		case GAMMA_I:		  
 		  sumGAMMA(tipCase, sumBuffer, x1_start, x2_start, tr->partitionData[model].tipVector, tipX1, tipX2,
-			   width);
+			   width, ex1, ex2);
 		  break;
 		default:
 		  assert(0);
@@ -5249,7 +5342,7 @@ static void coreClassify(tree *tr, volatile double *_dlnLdlz, volatile double *_
 }
 
 void makenewzClassify(tree *tr, int _maxiter, double *result, double *z0, double *x1_start, double *x2_start, unsigned char *tipX1,  
-		      unsigned char *tipX2, int tipCase, boolean *partitionConverged, int insertion)
+		      unsigned char *tipX2, int tipCase, boolean *partitionConverged, int insertion, int *ex1, int *ex2)
 {
   double   
     z[NUM_BRANCHES], 
@@ -5361,7 +5454,7 @@ void makenewzClassify(tree *tr, int _maxiter, double *result, double *z0, double
       
       if(firstIteration)
 	{	  
-	  sumClassify(tr, tipCase, x1_start, x2_start, tipX1, tipX2, executeModel);	  
+	  sumClassify(tr, tipCase, x1_start, x2_start, tipX1, tipX2, executeModel, ex1, ex2);
 	  firstIteration = FALSE;
 	}	 
 	

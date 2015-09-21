@@ -118,7 +118,7 @@
 #define ALPHA_MIN    0.02
 #define ALPHA_MAX    1000.0
 
-#define RATE_MIN     0.0000001
+#define RATE_MIN     0.0001
 #define RATE_MAX     1000000.0
 
 #define INVAR_MIN    0.0001
@@ -168,9 +168,9 @@
 #define PointGamma(prob,alpha,beta)  PointChi2(prob,2.0*(alpha))/(2.0*(beta))
 
 #define programName        "RAxML"
-#define programVersion     "8.2.2"
-#define programVersionInt   8220
-#define programDate        "August 6 2015"
+#define programVersion     "8.2.3"
+#define programVersionInt   8230
+#define programDate        "August 12 2015"
 
 
 #define  TREE_EVALUATION                 0
@@ -1522,7 +1522,8 @@ extern void resetPartitionMask(tree *tr, boolean *executeModel);
 extern size_t getContiguousVectorLength(tree *tr);
 
 extern void makenewzClassify(tree *tr, int maxiter, double *result, double *z0, double *x1_start, double *x2_start,
-			     unsigned char *tipX1,  unsigned char *tipX2, int tipCase, boolean *partitionConverged, int insertion);
+			     unsigned char *tipX1,  unsigned char *tipX2, int tipCase, boolean *partitionConverged, int insertion,
+			     int *ex1, int *ex2);
 
 extern void newviewMultiGrain(tree *tr,  double *x1, double *x2, double *x3, int *_ex1, int *_ex2, int *_ex3, unsigned char *_tipX1, unsigned char *_tipX2, 
 			      int tipCase, double *_pz, double *_qz, int insertion);

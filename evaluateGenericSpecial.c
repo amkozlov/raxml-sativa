@@ -2026,6 +2026,21 @@ static double evaluateGTRGAMMA(int *ex1, int *ex2, int *wptr,
   double  *x1, *x2;             
 
  
+#ifdef __SIM_SSE3
+    int k;
+//  __m128d minlhv = _mm_set1_pd(minlikelihood);
+
+  __m128d minlhv[5];
+  minlhv[0] = _mm_set1_pd(1.0);
+  minlhv[1] = _mm_set1_pd(minlikelihood);
+  minlhv[2] = _mm_set1_pd(minlikelihood * minlikelihood);
+  minlhv[3] = _mm_set1_pd(minlikelihood * minlikelihood * minlikelihood);
+  minlhv[4] = _mm_set1_pd(minlikelihood * minlikelihood * minlikelihood * minlikelihood);
+
+#else
+  double minlhv[5] = {1.0, minlikelihood, minlikelihood * minlikelihood,
+      minlikelihood * minlikelihood * minlikelihood, minlikelihood * minlikelihood * minlikelihood * minlikelihood};
+#endif
 
   if(tipX1)
     {          	
@@ -2037,12 +2052,22 @@ static double evaluateGTRGAMMA(int *ex1, int *ex2, int *wptr,
 #endif
 	  x1 = &(tipVector[4 * tipX1[i]]);	 
 	  x2 = &x2_start[16 * i];	 
+
+	  int ex2_min = ex2[i * 4];
+	  for(j = 1; j < 4; j++)
+	    if (ex2[i * 4 + j] < ex2_min)
+	      ex2_min = ex2[i * 4 + j];
 	  
 #ifdef __SIM_SSE3	
 	  termv = _mm_set1_pd(0.0);	    	   
 	  
+//          printf("%d %d %d %d\n",
+//		    ex2[i * 4 + 0], ex2[i * 4 + 1], ex2[i * 4 + 2], ex2[i * 4 + 3]);
+
 	  for(j = 0; j < 4; j++)
 	    {
+	      int scalings = MIN(ex2[i * 4 + j] - ex2_min, 4);
+
 	      x1v = _mm_load_pd(&x1[0]);
 	      x2v = _mm_load_pd(&x2[j * 4]);
 	      dv   = _mm_load_pd(&diagptable[j * 4]);
@@ -2050,6 +2075,11 @@ static double evaluateGTRGAMMA(int *ex1, int *ex2, int *wptr,
 	      x1v = _mm_mul_pd(x1v, x2v);
 	      x1v = _mm_mul_pd(x1v, dv);
 	      
+	      x1v = _mm_mul_pd(x1v, minlhv[scalings]);
+
+//	      for(k = 0; k < scalings; k++)
+//		x1v = _mm_mul_pd(x1v, minlhv);
+
 	      termv = _mm_add_pd(termv, x1v);
 	      
 	      x1v = _mm_load_pd(&x1[2]);
@@ -2058,26 +2088,41 @@ static double evaluateGTRGAMMA(int *ex1, int *ex2, int *wptr,
 	      
 	      x1v = _mm_mul_pd(x1v, x2v);
 	      x1v = _mm_mul_pd(x1v, dv);
+
+//	      for(k = 0; k < scalings; k++)
+//		x1v = _mm_mul_pd(x1v, minlhv);
+
+	      x1v = _mm_mul_pd(x1v, minlhv[scalings]);
 	      
 	      termv = _mm_add_pd(termv, x1v);
 	    }
 	  
 	  _mm_store_pd(t, termv);
 	  
-	  
 	  if(fastScaling)
 	    term = LOG(0.25 * FABS(t[0] + t[1]));
 	  else
-	    term = LOG(0.25 * FABS(t[0] + t[1])) + (ex2[i] * LOG(minlikelihood));	  
+	    term = LOG(0.25 * FABS(t[0] + t[1])) + (ex2_min * LOG(minlikelihood));
 #else
 	  for(j = 0, term = 0.0; j < 4; j++)
-	    for(k = 0; k < 4; k++)
-	      term += x1[k] * x2[j * 4 + k] * diagptable[j * 4 + k];	          	  	  	    	    	  
+	    {
+	      int scalings = MIN(ex2[i * 4 + j] - ex2_min, 4);
+
+	      for(k = 0; k < 4; k++)
+		{
+		  double
+		    t = x1[k] * x2[j * 4 + k] * diagptable[j * 4 + k];
+
+		  t *= minlhv[scalings];
+
+		  term += t;
+		}
+	    }
 	  
 	  if(fastScaling)
 	    term = LOG(0.25 * FABS(term));
 	  else
-	    term = LOG(0.25 * FABS(term)) + ex2[i] * LOG(minlikelihood);	 
+	    term = LOG(0.25 * FABS(term)) + ex2_min * LOG(minlikelihood);
 #endif
 	  
 	  sum += wptr[i] * term;
@@ -2094,18 +2139,34 @@ static double evaluateGTRGAMMA(int *ex1, int *ex2, int *wptr,
 	  	 	  	  
 	  x1 = &x1_start[16 * i];
 	  x2 = &x2_start[16 * i];	  	  
-	
-#ifdef __SIM_SSE3	
-	  termv = _mm_set1_pd(0.0);	  	 
-	  
+
+	  int ex_min = ex1[i * 4] + ex2[i * 4];
+	  for(j = 1; j < 4; j++)
+	    if (ex1[i * 4 + j] + ex2[i * 4 + j] < ex_min)
+	      ex_min = ex1[i * 4 + j] + ex2[i * 4 + j];
+
+#ifdef __SIM_SSE3
+	  termv = _mm_set1_pd(0.0);
+
+//          printf("%d %d %d %d\t%d %d %d %d\n",
+//		    ex1[i * 4 + 0], ex1[i * 4 + 1], ex1[i * 4 + 2], ex1[i * 4 + 3],
+//		    ex2[i * 4 + 0], ex2[i * 4 + 1], ex2[i * 4 + 2], ex2[i * 4 + 3]);
+
 	  for(j = 0; j < 4; j++)
 	    {
+	      int scalings = MIN(ex1[i * 4 + j] + ex2[i * 4 + j] - ex_min, 4);
+
 	      x1v = _mm_load_pd(&x1[j * 4]);
 	      x2v = _mm_load_pd(&x2[j * 4]);
 	      dv   = _mm_load_pd(&diagptable[j * 4]);
 	      
 	      x1v = _mm_mul_pd(x1v, x2v);
 	      x1v = _mm_mul_pd(x1v, dv);
+
+//	      for(k = 0; k < scalings; k++)
+//		x1v = _mm_mul_pd(x1v, minlhv);
+
+	      x1v = _mm_mul_pd(x1v, minlhv[scalings]);
 	      
 	      termv = _mm_add_pd(termv, x1v);
 	      
@@ -2115,6 +2176,11 @@ static double evaluateGTRGAMMA(int *ex1, int *ex2, int *wptr,
 	      
 	      x1v = _mm_mul_pd(x1v, x2v);
 	      x1v = _mm_mul_pd(x1v, dv);
+
+//	      for(k = 0; k < scalings; k++)
+//		x1v = _mm_mul_pd(x1v, minlhv);
+
+	      x1v = _mm_mul_pd(x1v, minlhv[scalings]);
 	      
 	      termv = _mm_add_pd(termv, x1v);
 	    }
@@ -2124,21 +2190,37 @@ static double evaluateGTRGAMMA(int *ex1, int *ex2, int *wptr,
 	  if(fastScaling)
 	    term = LOG(0.25 * FABS(t[0] + t[1]));
 	  else
-	    term = LOG(0.25 * FABS(t[0] + t[1])) + ((ex1[i] + ex2[i]) * LOG(minlikelihood));	  
+	    term = LOG(0.25 * FABS(t[0] + t[1])) + (ex_min * LOG(minlikelihood));
 #else 
+
 	  for(j = 0, term = 0.0; j < 4; j++)
-	    for(k = 0; k < 4; k++)
-	      term += x1[j * 4 + k] * x2[j * 4 + k] * diagptable[j * 4 + k];
-	          	  	  	      
+	    {
+	      int scalings = MIN(ex1[i * 4 + j] + ex2[i * 4 + j] - ex_min, 4);
+
+	      for(k = 0; k < 4; k++)
+		{
+		  double
+		    t = x1[j * 4 + k] * x2[j * 4 + k] * diagptable[j * 4 + k];
+
+		  t *= minlhv[scalings];
+
+		  term += t;
+		}
+
+	    }
+
 	   if(fastScaling)
 	     term = LOG(0.25 * FABS(term));
 	    else
-	      term = LOG(0.25 * FABS(term)) + (ex1[i] + ex2[i]) * LOG(minlikelihood);
+	      term = LOG(0.25 * FABS(term)) + (ex_min) * LOG(minlikelihood);
 #endif
 	  
 	  sum += wptr[i] * term;
 	}                      	
     }
+
+//  printf("LH = %f\n", sum);
+//  exit(0);
 
   return sum;
 } 
@@ -3835,7 +3917,7 @@ double evalCL(tree *tr, double *x2, int *_ex2, unsigned char *_tip, double *pz, 
 	  invariant    = &tr->contiguousInvariant[columnCounter]; 
 	  tip          = &_tip[columnCounter];
 	  x2_start     = &x2[offsetCounter];
-	  ex2          = &_ex2[columnCounter];
+	  ex2          = &_ex2[columnCounter * tr->discreteRateCategories];
 	  
 	  if(tr->multiBranch)
 	    z = pz[model];

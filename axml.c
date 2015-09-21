@@ -5326,7 +5326,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
   
 
   tr->doSubtreeEPA = FALSE;
-  tr->useFastScaling = TRUE; 
+  tr->useFastScaling = FALSE; 
   tr->bootStopCriterion = -1;
   tr->wcThreshold = 0.03;
   tr->doCutoff = TRUE;

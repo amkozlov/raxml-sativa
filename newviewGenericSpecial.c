@@ -3127,6 +3127,10 @@ static void newviewGTRGAMMA(int tipCase,
     values[8],
     EVV[8];  
 
+   __m128d
+     scalerv = _mm_set1_pd(twotothe256);
+
+
   for(k = 0; k < 4; k++)
     for (l=0; l < 4; l++)
       EV_t[4 * l + k] = EV[4 * k + l];
@@ -3385,49 +3389,30 @@ static void newviewGTRGAMMA(int tipCase,
 		   
 		   EV_t_l2_k0 = _mm_hadd_pd( EV_t_l2_k0, EV_t_l3_k0 );
 		   
-		   values[j * 2]     = EV_t_l0_k0;
-		   values[j * 2 + 1] = EV_t_l2_k0;		   		   
-		   
-		   maxv = _mm_max_pd(maxv, _mm_and_pd(EV_t_l0_k0, absMask.m));
-		   maxv = _mm_max_pd(maxv, _mm_and_pd(EV_t_l2_k0, absMask.m));		   
+		   maxv = _mm_max_pd(_mm_and_pd(EV_t_l0_k0, absMask.m), _mm_and_pd(EV_t_l2_k0, absMask.m));
+
+		   _mm_store_pd(maxima, maxv);
+
+		   max = MAX(maxima[0], maxima[1]);
+
+		   if(max < minlikelihood)
+		     {
+		       _mm_store_pd(&x3[j * 4], _mm_mul_pd(EV_t_l0_k0, scalerv));
+		       _mm_store_pd(&x3[j * 4 + 2], _mm_mul_pd(EV_t_l2_k0, scalerv));
+
+		       if(useFastScaling)
+			 addScale += wgt[i];
+		       else
+			 ex3[i * 4 + j]  += 1;
+		     }
+		   else
+		     {
+		       _mm_store_pd(&x3[j * 4], EV_t_l0_k0);
+		       _mm_store_pd(&x3[j * 4 + 2], EV_t_l2_k0);
+		     }
 		 }
-	       }
-
-	     
-	     _mm_store_pd(maxima, maxv);
-
-	     max = MAX(maxima[0], maxima[1]);
-
-	     if(max < minlikelihood)
-	       {
-		 __m128d sv = _mm_set1_pd(twotothe256);
-	       		       	   	 	     
-		 _mm_store_pd(&x3[0], _mm_mul_pd(values[0], sv));	   
-		 _mm_store_pd(&x3[2], _mm_mul_pd(values[1], sv));
-		 _mm_store_pd(&x3[4], _mm_mul_pd(values[2], sv));
-		 _mm_store_pd(&x3[6], _mm_mul_pd(values[3], sv));
-		 _mm_store_pd(&x3[8], _mm_mul_pd(values[4], sv));	   
-		 _mm_store_pd(&x3[10], _mm_mul_pd(values[5], sv));
-		 _mm_store_pd(&x3[12], _mm_mul_pd(values[6], sv));
-		 _mm_store_pd(&x3[14], _mm_mul_pd(values[7], sv));	     
-		 
-		 if(useFastScaling)
-		   addScale += wgt[i];
-		 else
-		   ex3[i]  += 1;	     
-	       }
-	     else
-	       {
-		 _mm_store_pd(&x3[0], values[0]);	   
-		 _mm_store_pd(&x3[2], values[1]);
-		 _mm_store_pd(&x3[4], values[2]);
-		 _mm_store_pd(&x3[6], values[3]);
-		 _mm_store_pd(&x3[8], values[4]);	   
-		 _mm_store_pd(&x3[10], values[5]);
-		 _mm_store_pd(&x3[12], values[6]);
-		 _mm_store_pd(&x3[14], values[7]);
-	       }
-	   }
+	       } // for j
+	   } // for i
       }
       break;
     case INNER_INNER:     
@@ -3565,50 +3550,30 @@ static void newviewGTRGAMMA(int tipCase,
 
             EV_t_l2_k0 = _mm_hadd_pd( EV_t_l2_k0, EV_t_l3_k0 );
 
-	    
-	    values[j * 2] = EV_t_l0_k0;
-	    values[j * 2 + 1] = EV_t_l2_k0;            	   	    
+	     maxv = _mm_max_pd(_mm_and_pd(EV_t_l0_k0, absMask.m), _mm_and_pd(EV_t_l2_k0, absMask.m));
 
-	    maxv = _mm_max_pd(maxv, _mm_and_pd(EV_t_l0_k0, absMask.m));
-	    maxv = _mm_max_pd(maxv, _mm_and_pd(EV_t_l2_k0, absMask.m));
-           }
-	 	 
-	 
-	 _mm_store_pd(maxima, maxv);
-	 
-	 max = MAX(maxima[0], maxima[1]);
-	 
-	 if(max < minlikelihood)
-	   {
-	     __m128d sv = _mm_set1_pd(twotothe256);
-	       		       	   	 	     
-	     _mm_store_pd(&x3[0], _mm_mul_pd(values[0], sv));	   
-	     _mm_store_pd(&x3[2], _mm_mul_pd(values[1], sv));
-	     _mm_store_pd(&x3[4], _mm_mul_pd(values[2], sv));
-	     _mm_store_pd(&x3[6], _mm_mul_pd(values[3], sv));
-	     _mm_store_pd(&x3[8], _mm_mul_pd(values[4], sv));	   
-	     _mm_store_pd(&x3[10], _mm_mul_pd(values[5], sv));
-	     _mm_store_pd(&x3[12], _mm_mul_pd(values[6], sv));
-	     _mm_store_pd(&x3[14], _mm_mul_pd(values[7], sv));	     
-	     
-	     if(useFastScaling)
-	       addScale += wgt[i];
+	     _mm_store_pd(maxima, maxv);
+
+	     max = MAX(maxima[0], maxima[1]);
+
+	     if(max < minlikelihood)
+	       {
+		 _mm_store_pd(&x3[j * 4], _mm_mul_pd(EV_t_l0_k0, scalerv));
+		 _mm_store_pd(&x3[j * 4 + 2], _mm_mul_pd(EV_t_l2_k0, scalerv));
+
+		 if(useFastScaling)
+		   addScale += wgt[i];
+		 else
+		   ex3[i * 4 + j]  += 1;
+	       }
 	     else
-	       ex3[i]  += 1;	     
-	   }
-	 else
-	   {
-	     _mm_store_pd(&x3[0], values[0]);	   
-	     _mm_store_pd(&x3[2], values[1]);
-	     _mm_store_pd(&x3[4], values[2]);
-	     _mm_store_pd(&x3[6], values[3]);
-	     _mm_store_pd(&x3[8], values[4]);	   
-	     _mm_store_pd(&x3[10], values[5]);
-	     _mm_store_pd(&x3[12], values[6]);
-	     _mm_store_pd(&x3[14], values[7]);
-	   }	 
-       }
-   
+	       {
+		 _mm_store_pd(&x3[j * 4], EV_t_l0_k0);
+		 _mm_store_pd(&x3[j * 4 + 2], EV_t_l2_k0);
+	       }
+	     
+           } // for j
+       } // for i
      break;
     default:
       assert(0);
@@ -4673,23 +4638,21 @@ static void newviewGTRGAMMA(int tipCase,
 		   for (l=0; l<4; l++)
 		     x3[j * 4 + l] +=  x1px2[k] * EV[4 * k + l];
 
+		 scale = 1;
+		 for(l = 0; scale && (l < 4); l++)
+		   scale = (ABS(x3[j * 4 + l]) <  minlikelihood);
 
+		 if(scale)
+		   {
+		     for (l=0; l<4; l++)
+		       x3[j * 4 + l] *= twotothe256;
+
+		     if(useFastScaling)
+		       addScale += wgt[i];
+		     else
+		       ex3[i * 4 + j]  += 1;
+		   }
 	       }	     
-
-	     scale = 1;
-	     for(l = 0; scale && (l < 16); l++)
-	       scale = (ABS(x3[l]) <  minlikelihood);
-
-	     if(scale)
-	       {
-		 for (l=0; l<16; l++)
-		   x3[l] *= twotothe256;
-
-		 if(useFastScaling)
-		   addScale += wgt[i];
-		 else
-		   ex3[i]  += 1;		 
-	       }
 
 	   }
       }
@@ -4726,22 +4689,22 @@ static void newviewGTRGAMMA(int tipCase,
 	     for(k = 0; k < 4; k++)
 	       for (l=0; l<4; l++)
 	         x3[j * 4 + l] +=  x1px2[k] * EV[4 * k + l];
-           }	 
 
-	 scale = 1;
-	 for(l = 0; scale && (l < 16); l++)
-	   scale = (ABS(x3[l]) <  minlikelihood);
+	     scale = 1;
+	     for(l = 0; scale && (l < 4); l++)
+	       scale = (ABS(x3[j * 4 + l]) <  minlikelihood);
 
-	 if(scale)
-	   {
-	     for (l=0; l<16; l++)
-	       x3[l] *= twotothe256;
+	     if(scale)
+	       {
+		 for (l=0; l<4; l++)
+		   x3[j * 4 + l] *= twotothe256;
 
-	      if(useFastScaling)
-		addScale += wgt[i];
-	      else
-		ex3[i]  += 1;	   
-	   }		      		
+		 if(useFastScaling)
+		   addScale += wgt[i];
+		 else
+		   ex3[i * 4 + j]  += 1;
+	       }
+	   }
        }
    
      break;
@@ -7958,7 +7921,7 @@ void newviewIterative (tree *tr)
 		{
 		  size_t
 		    availableExpLength = tr->partitionData[model].expSpaceVector[(tInfo->pNumber - tr->mxtips - 1)],
-		    requiredExpLength  = width * sizeof(int);
+		    requiredExpLength  = width * rateHet * sizeof(int);
 		  
 		  ex3 = tr->partitionData[model].expVector[tInfo->pNumber - tr->mxtips - 1];
 		  
@@ -8014,7 +7977,7 @@ void newviewIterative (tree *tr)
 		      size_t
 			k;		      		     
 
-		      for(k = 0; k < width; k++)
+		      for(k = 0; k < width * rateHet; k++)
 			ex3[k] = 0;
 		    }
 		  break;
@@ -8063,7 +8026,7 @@ void newviewIterative (tree *tr)
 		      int
 			*ex2 = tr->partitionData[model].expVector[tInfo->rNumber - tr->mxtips - 1];		     
 		      
-		      for(k = 0; k < width; k++)
+		      for(k = 0; k < width * rateHet; k++)
 			ex3[k] = ex2[k];
 		    }
 		  break;
@@ -8114,7 +8077,7 @@ void newviewIterative (tree *tr)
 		      ex1      = tr->partitionData[model].expVector[tInfo->qNumber - tr->mxtips - 1];
 		      ex2      = tr->partitionData[model].expVector[tInfo->rNumber - tr->mxtips - 1];		      
 		      
-		      for(k = 0; k < width; k++)
+		      for(k = 0; k < width * rateHet; k++)
 			ex3[k] = ex1[k] + ex2[k];
 		    }		  
 		  break;
@@ -8734,7 +8697,6 @@ void newviewMultiGrain(tree *tr,  double *x1, double *x2, double *x3, int *_ex1,
 
   setPartitionMask(tr, insertion, tr->executeModel);
 
-
 #ifdef _DEBUG_MULTI_EPA
   if(tr->threadID == THREAD_TO_DEBUG)
     printf("NV %s: ", tr->nameList[tr->inserts[insertion]]);
@@ -8782,7 +8744,7 @@ void newviewMultiGrain(tree *tr,  double *x1, double *x2, double *x3, int *_ex1,
 	    case TIP_TIP:    
 	      tipX1 =    &_tipX1[columnCounter];
 	      tipX2 =    &_tipX2[columnCounter];
-	      ex3   =    &_ex3[columnCounter];
+	      ex3   =    &_ex3[columnCounter * tr->discreteRateCategories];
 	      x3_start = &x3[offsetCounter];
 	      
 	      if(!tr->useFastScaling)
@@ -8796,17 +8758,17 @@ void newviewMultiGrain(tree *tr,  double *x1, double *x2, double *x3, int *_ex1,
 	    case TIP_INNER:
 	      tipX1 =    &_tipX1[columnCounter];
 	      
-	      ex2   =    &_ex2[columnCounter];
+	      ex2   =    &_ex2[columnCounter * tr->discreteRateCategories];
 	      x2_start = &x2[offsetCounter];
 	      
-	      ex3   =    &_ex3[columnCounter];
+	      ex3   =    &_ex3[columnCounter * tr->discreteRateCategories];
 	      x3_start = &x3[offsetCounter];
 	      
 	      if(!tr->useFastScaling)
 		{
 		  int k;	      
 		  
-		  for(k = 0; k < width; k++)
+		  for(k = 0; k < width * tr->discreteRateCategories; k++)
 		    ex3[k] = ex2[k];
 		}
 	      break;
@@ -8824,7 +8786,7 @@ void newviewMultiGrain(tree *tr,  double *x1, double *x2, double *x3, int *_ex1,
 		{
 		  int k;	      
 		  
-		  for(k = 0; k < width; k++)
+		  for(k = 0; k < width * tr->discreteRateCategories; k++)
 		    ex3[k] = ex1[k] + ex2[k];
 		}
 	      break;

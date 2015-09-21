@@ -233,30 +233,47 @@ void  newviewGTRGAMMA_AVX(int tipCase,
 #endif
 		  }
 		    
-		if(scale)
-		  {
-		    __m256d 	     
-		      v1 = _mm256_and_pd(xv[k], absMask_AVX.m);
+//		if(scale)
+//		  {
+//		    __m256d
+//		      v1 = _mm256_and_pd(xv[k], absMask_AVX.m);
+//
+//		    v1 = _mm256_cmp_pd(v1,  minlikelihood_avx, _CMP_LT_OS);
+//
+//		    if(_mm256_movemask_pd( v1 ) != 15)
+//		      scale = 0;
+//		  }
 
-		    v1 = _mm256_cmp_pd(v1,  minlikelihood_avx, _CMP_LT_OS);
-		    
-		    if(_mm256_movemask_pd( v1 ) != 15)
-		      scale = 0;
+		__m256d
+		  v1 = _mm256_and_pd(xv[k], absMask_AVX.m);
+
+		v1 = _mm256_cmp_pd(v1,  minlikelihood_avx, _CMP_LT_OS);
+
+		if(_mm256_movemask_pd( v1 ) == 15)
+		  {
+			xv[k] = _mm256_mul_pd(xv[k], twoto);
+
+			if(useFastScaling)
+			  assert(0);
+//			  addScale += wgt[i];
+			else
+			  ex3[i * 4 + k] += 1;
 		  }
+
 	      }	    
 
-	    if(scale)
-	      {		
-		xv[0] = _mm256_mul_pd(xv[0], twoto);
-		xv[1] = _mm256_mul_pd(xv[1], twoto);
-		xv[2] = _mm256_mul_pd(xv[2], twoto);
-		xv[3] = _mm256_mul_pd(xv[3], twoto);
-
-		if(useFastScaling)
-		  addScale += wgt[i];
-		else
-		  ex3[i] += 1;
-	      }
+//	    if(scale)
+//	      {
+//		xv[0] = _mm256_mul_pd(xv[0], twoto);
+//		xv[1] = _mm256_mul_pd(xv[1], twoto);
+//		xv[2] = _mm256_mul_pd(xv[2], twoto);
+//		xv[3] = _mm256_mul_pd(xv[3], twoto);
+//
+//		if(useFastScaling)
+//		  addScale += wgt[i];
+//		else
+//		  ex3[i] += 1;
+//	      }
 
 	    _mm256_store_pd(&x3[16 * i],      xv[0]);
 	    _mm256_store_pd(&x3[16 * i + 4],  xv[1]);
@@ -300,30 +317,46 @@ void  newviewGTRGAMMA_AVX(int tipCase,
 		    xv[k] = _mm256_add_pd(xv[k], _mm256_mul_pd(x1v, evv));
 		  }
 		
-		if(scale)
-		  {
-		    __m256d 	     
-		      v1 = _mm256_and_pd(xv[k], absMask_AVX.m);
+//		if(scale)
+//		  {
+//		    __m256d
+//		      v1 = _mm256_and_pd(xv[k], absMask_AVX.m);
+//
+//		    v1 = _mm256_cmp_pd(v1,  minlikelihood_avx, _CMP_LT_OS);
+//
+//		    if(_mm256_movemask_pd( v1 ) != 15)
+//		      scale = 0;
+//		  }
 
-		    v1 = _mm256_cmp_pd(v1,  minlikelihood_avx, _CMP_LT_OS);
-		    
-		    if(_mm256_movemask_pd( v1 ) != 15)
-		      scale = 0;
+		__m256d
+		  v1 = _mm256_and_pd(xv[k], absMask_AVX.m);
+
+		v1 = _mm256_cmp_pd(v1,  minlikelihood_avx, _CMP_LT_OS);
+
+		if(_mm256_movemask_pd( v1 ) == 15)
+		  {
+			xv[k] = _mm256_mul_pd(xv[k], twoto);
+
+			if(useFastScaling)
+			  assert(0);
+//			  addScale += wgt[i];
+			else
+			  ex3[i * 4 + k] += 1;
 		  }
 	      }
 
-	     if(scale)
-	      {	
-		xv[0] = _mm256_mul_pd(xv[0], twoto);
-		xv[1] = _mm256_mul_pd(xv[1], twoto);
-		xv[2] = _mm256_mul_pd(xv[2], twoto);
-		xv[3] = _mm256_mul_pd(xv[3], twoto);
-
-		if(useFastScaling)
-		  addScale += wgt[i];
-		else
-		  ex3[i] += 1;		
-	      }
+//	     if(scale)
+//	      {
+//		xv[0] = _mm256_mul_pd(xv[0], twoto);
+//		xv[1] = _mm256_mul_pd(xv[1], twoto);
+//		xv[2] = _mm256_mul_pd(xv[2], twoto);
+//		xv[3] = _mm256_mul_pd(xv[3], twoto);
+//
+//		if(useFastScaling)
+//		  addScale += wgt[i];
+//		else
+//		  ex3[i] += 1;
+//	      }
 		
 	    _mm256_store_pd(&x3[16 * i],      xv[0]);
 	    _mm256_store_pd(&x3[16 * i + 4],  xv[1]);

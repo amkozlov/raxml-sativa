@@ -45,18 +45,9 @@
 
 #include "axml.h"
 
-
-
 extern int Thorough;
+extern int optimizeRateCategoryInvocations;
 extern infoList iList;
-extern char seq_file[1024];
-extern char resultFileName[1024];
-extern char tree_file[1024];
-extern char workdir[1024];
-extern char run_id[128];
-extern FILE *INFILE;
-extern double masterTime;
-
 
 
 boolean initrav (tree *tr, nodeptr p)
@@ -1140,19 +1131,30 @@ int determineRearrangementSetting(tree *tr,  analdef *adef, bestlist *bestT, bes
   boolean cutoff;  
 
   MaxFast = 26;
+  mintrav = 1;
 
   startLH = tr->likelihood;
 
   cutoff = tr->doCutoff;
   tr->doCutoff = FALSE;
- 
     
-  mintrav = 1;
-  maxtrav = 5;
+  if(adef->useCheckpoint)
+    {
+      assert(tr->ckp.state == REARR_SETTING);
 
-  bestTrav = maxtrav = 5;
+      maxtrav = tr->ckp.maxtrav;
+      bestTrav = tr->ckp.bestTrav;
+      startLH  = tr->ckp.startLH;
+      impr     = tr->ckp.impr;
+      cutoff = tr->ckp.cutoff;
 
-  impr = 1;
+      adef->useCheckpoint = FALSE;
+    }
+  else
+    {
+      bestTrav = maxtrav = 5;
+      impr = 1;
+    }
 
   resetBestTree(bt);
 
@@ -1163,13 +1165,21 @@ int determineRearrangementSetting(tree *tr,  analdef *adef, bestlist *bestT, bes
       makePermutation(perm, 1, n, adef);
     }
   
-
   while(impr && maxtrav < MaxFast)
     {	
       recallBestTree(bestT, 1, tr);     
       nodeRectifier(tr);
-     
       
+      tr->ckp.optimizeRateCategoryInvocations = optimizeRateCategoryInvocations;
+      tr->ckp.cutoff = cutoff;
+      tr->ckp.state = REARR_SETTING;
+      tr->ckp.maxtrav = maxtrav;
+      tr->ckp.bestTrav = bestTrav;
+      tr->ckp.startLH  = startLH;
+      tr->ckp.impr = impr;
+
+      writeCheckpoint(tr);
+
       if (maxtrav > tr->ntips - 3)  
 	maxtrav = tr->ntips - 3;    
  
@@ -1177,9 +1187,6 @@ int determineRearrangementSetting(tree *tr,  analdef *adef, bestlist *bestT, bes
           
       for(i = 1; i <= tr->mxtips + tr->mxtips - 2; i++)
 	{                
-
-
-
 	  if(adef->permuteTreeoptimize)
 	    index = perm[i];
 	  else
@@ -1250,8 +1257,6 @@ int bCount = 0;
 
 void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel) 
 { 
-  unsigned int
-    vLength = 0;
   int
     i,
     impr, 
@@ -1277,14 +1282,14 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
     buf[64];
 #endif
 
-  hashtable *h = (hashtable*)NULL;
-  unsigned int **bitVectors = (unsigned int**)NULL;
-  
- 
+  int
+    treeVectorLength = 0;
+
   if(tr->searchConvergenceCriterion)
-    {          
-      bitVectors = initBitVector(tr, &vLength);
-      h = initHashTable(tr->mxtips * 4);   
+    {
+      treeVectorLength = 1;
+      tr->bitVectors = initBitVector(tr, &tr->vLength);
+      tr->convHashT = initHashTable(tr->mxtips * 4);
     }
 
   bestT = (bestlist *) rax_malloc(sizeof(bestlist));
@@ -1321,83 +1326,167 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
     
   Thorough = 0;     
   
-  if(estimateModel)
-    {
-      if(adef->useBinaryModelFile)
-	{
-	  readBinaryModel(tr, adef);
-	  evaluateGenericInitrav(tr, tr->start);
-	  treeEvaluate(tr, 2);
-	}
+  if(!adef->useCheckpoint)
+  {
+      if(estimateModel)
+        {
+          if(adef->useBinaryModelFile)
+    	{
+    	  readBinaryModel(tr, adef);
+    	  evaluateGenericInitrav(tr, tr->start);
+    	  treeEvaluate(tr, 2);
+    	}
+          else
+    	{
+    	  evaluateGenericInitrav(tr, tr->start);
+    	  modOpt(tr, adef, FALSE, 10.0);
+    	}
+        }
       else
-	{
-	  evaluateGenericInitrav(tr, tr->start);
-	  modOpt(tr, adef, FALSE, 10.0);
-	}
-    }
-  else
-    treeEvaluate(tr, 2);  
-
- 
-
-
+        treeEvaluate(tr, 2);
+  }
 
   printLog(tr, adef, FALSE); 
 
   saveBestTree(bestT, tr);
   
-  if(!adef->initialSet)   
-    bestTrav = adef->bestTrav = determineRearrangementSetting(tr, adef, bestT, bt);                   
-  else
-    bestTrav = adef->bestTrav = adef->initial;
-
-  if(estimateModel)
+  if(!adef->initialSet)
+  {
+    if((!adef->useCheckpoint) || (adef->useCheckpoint && tr->ckp.state == REARR_SETTING))
     {
-      if(adef->useBinaryModelFile)	
-	treeEvaluate(tr, 2);
-      else
-	{
-	  evaluateGenericInitrav(tr, tr->start);
-	  modOpt(tr, adef, FALSE, 5.0);
-	}
+      bestTrav = adef->bestTrav = determineRearrangementSetting(tr, adef, bestT, bt);
     }
+    else
+    {
+      bestTrav = adef->bestTrav = tr->ckp.bestTrav;
+    }
+    printBothOpen("\nBest rearrangement radius: %d\n", bestTrav);
+  }
   else
-    treeEvaluate(tr, 1);
-  
+  {
+    bestTrav = adef->bestTrav = adef->initial;
+    printBothOpen("\nUser-defined rearrangement radius: %d\n", bestTrav);
+  }
+
+  if(!(adef->useCheckpoint && (tr->ckp.state == FAST_SPRS || tr->ckp.state == SLOW_SPRS)))
+  {
+      if(estimateModel)
+        {
+          if(adef->useBinaryModelFile)
+            treeEvaluate(tr, 2);
+          else
+	  {
+	    evaluateGenericInitrav(tr, tr->start);
+	    modOpt(tr, adef, FALSE, 5.0);
+	  }
+        }
+      else
+        treeEvaluate(tr, 1);
+  }
+
   saveBestTree(bestT, tr); 
   impr = 1;
   if(tr->doCutoff)
     tr->itCount = 0;
 
- 
+  if(adef->useCheckpoint && tr->ckp.state == SLOW_SPRS)
+    goto START_SLOW_SPRS;
 
   while(impr)
     {              
-      recallBestTree(bestT, 1, tr); 
+      if(adef->useCheckpoint && tr->ckp.state == FAST_SPRS)
+      {
+	optimizeRateCategoryInvocations = tr->ckp.optimizeRateCategoryInvocations;
+
+	impr = tr->ckp.impr;
+	Thorough = tr->ckp.Thorough;
+	bestTrav = tr->ckp.bestTrav;
+	treeVectorLength = tr->ckp.treeVectorLength;
+	rearrangementsMax = tr->ckp.rearrangementsMax;
+	rearrangementsMin = tr->ckp.rearrangementsMin;
+	thoroughIterations = tr->ckp.thoroughIterations;
+	fastIterations = tr->ckp.fastIterations;
+
+	lh = tr->ckp.lh;
+	previousLh = tr->ckp.previousLh;
+	difference = tr->ckp.difference;
+	epsilon    = tr->ckp.epsilon;
+
+	tr->likelihood = tr->ckp.tr_likelihood;
+
+	tr->lhCutoff = tr->ckp.tr_lhCutoff;
+	tr->lhAVG    = tr->ckp.tr_lhAVG;
+	tr->lhDEC    = tr->ckp.tr_lhDEC;
+	tr->itCount = tr->ckp.tr_itCount;
+	tr->doCutoff = tr->ckp.tr_doCutoff;
+
+	adef->useCheckpoint = FALSE;
+      }
+      else
+	recallBestTree(bestT, 1, tr);
+
+      // write checkpoint
+      {
+	tr->ckp.state = FAST_SPRS;
+	tr->ckp.optimizeRateCategoryInvocations = optimizeRateCategoryInvocations;
+
+	tr->ckp.impr = impr;
+	tr->ckp.Thorough = Thorough;
+	tr->ckp.bestTrav = bestTrav;
+	tr->ckp.treeVectorLength = treeVectorLength;
+	tr->ckp.rearrangementsMax = rearrangementsMax;
+	tr->ckp.rearrangementsMin = rearrangementsMin;
+	tr->ckp.thoroughIterations = thoroughIterations;
+	tr->ckp.fastIterations = fastIterations;
+
+	tr->ckp.lh = lh;
+	tr->ckp.previousLh = previousLh;
+	tr->ckp.difference = difference;
+	tr->ckp.epsilon    = epsilon;
+
+	writeCheckpoint(tr);
+      }
 
       if(tr->searchConvergenceCriterion)
 	{
 	  int bCounter = 0;	      
 	  
 	  if(fastIterations > 1)
-	    cleanupHashTable(h, (fastIterations % 2));		
+	    cleanupHashTable(tr->convHashT, (fastIterations % 2));
 	  
-	  bitVectorInitravSpecial(bitVectors, tr->nodep[1]->back, tr->mxtips, vLength, h, fastIterations % 2, BIPARTITIONS_RF, (branchInfo *)NULL,
+	  bitVectorInitravSpecial(tr->bitVectors, tr->nodep[1]->back, tr->mxtips, tr->vLength, tr->convHashT, fastIterations % 2, BIPARTITIONS_RF, (branchInfo *)NULL,
 				  &bCounter, 1, FALSE, FALSE);	    
 	  
 	  assert(bCounter == tr->mxtips - 3);	    	   
 	  
+	  {
+	    char
+	      *buffer = (char*)calloc(tr->treeStringLength, sizeof(char));
+    #ifdef _DEBUG_CHECKPOINTING
+	    printf("Storing tree in slot %d\n", fastIterations % 2);
+    #endif
+
+	    Tree2String(buffer, tr, tr->start->back, FALSE, TRUE, FALSE, FALSE, FALSE, adef, SUMMARIZE_LH, FALSE, FALSE, FALSE, FALSE);
+
+	    if(fastIterations % 2 == 0)
+	      memcpy(tr->tree0, buffer, tr->treeStringLength * sizeof(char));
+	    else
+	      memcpy(tr->tree1, buffer, tr->treeStringLength * sizeof(char));
+
+	    free(buffer);
+	  }
+
 	  if(fastIterations > 0)
 	    {
-	      double rrf = convergenceCriterion(h, tr->mxtips);
+	      double rrf = convergenceCriterion(tr->convHashT, tr->mxtips);
 	      
 	      if(rrf <= 0.01) /* 1% cutoff */
 		{
 		  printBothOpen("ML fast search converged at fast SPR cycle %d with stopping criterion\n", fastIterations);
 		  printBothOpen("Relative Robinson-Foulds (RF) distance between respective best trees after one succseful SPR cycle: %f%s\n", rrf, "%");
-		  cleanupHashTable(h, 0);
-		  cleanupHashTable(h, 1);
-		  goto cleanup_fast;
+		  cleanupHashTable(tr->convHashT, 0);
+		  cleanupHashTable(tr->convHashT, 1);
+		  goto CLEANUP_FAST;
 		}
 	      else		    
 		printBothOpen("ML search convergence criterion fast cycle %d->%d Relative Robinson-Foulds %f\n", fastIterations - 1, fastIterations, rrf);
@@ -1446,12 +1535,11 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
 
   if(tr->searchConvergenceCriterion)
     {
-      cleanupHashTable(h, 0);
-      cleanupHashTable(h, 1);
+      cleanupHashTable(tr->convHashT, 0);
+      cleanupHashTable(tr->convHashT, 1);
     }
 
- cleanup_fast:
-
+CLEANUP_FAST:
   Thorough = 1;
   impr = 1;
   
@@ -1469,45 +1557,114 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
   else
     treeEvaluate(tr, 1.0);
 
+  printBothOpen("\nLogLikelihood after %d fast SPR cycles: %f\n", fastIterations, tr->likelihood);
+
+START_SLOW_SPRS:
   while(1)
     {	
-      recallBestTree(bestT, 1, tr);    
+      if(adef->useCheckpoint && tr->ckp.state == SLOW_SPRS)
+      {
+        optimizeRateCategoryInvocations = tr->ckp.optimizeRateCategoryInvocations;
+
+        impr = tr->ckp.impr;
+        Thorough = tr->ckp.Thorough;
+        bestTrav = tr->ckp.bestTrav;
+        treeVectorLength = tr->ckp.treeVectorLength;
+        rearrangementsMax = tr->ckp.rearrangementsMax;
+        rearrangementsMin = tr->ckp.rearrangementsMin;
+        thoroughIterations = tr->ckp.thoroughIterations;
+        fastIterations = tr->ckp.fastIterations;
+
+        lh = tr->ckp.lh;
+        previousLh = tr->ckp.previousLh;
+        difference = tr->ckp.difference;
+        epsilon    = tr->ckp.epsilon;
+
+        tr->likelihood = tr->ckp.tr_likelihood;
+
+        tr->lhCutoff = tr->ckp.tr_lhCutoff;
+        tr->lhAVG    = tr->ckp.tr_lhAVG;
+        tr->lhDEC    = tr->ckp.tr_lhDEC;
+        tr->itCount = tr->ckp.tr_itCount;
+        tr->doCutoff = tr->ckp.tr_doCutoff;
+
+        adef->useCheckpoint = FALSE;
+      }
+      else
+	recallBestTree(bestT, 1, tr);
+
+      // write checkpoint
+      {
+        tr->ckp.state = SLOW_SPRS;
+        tr->ckp.optimizeRateCategoryInvocations = optimizeRateCategoryInvocations;
+
+        tr->ckp.impr = impr;
+        tr->ckp.Thorough = Thorough;
+        tr->ckp.bestTrav = bestTrav;
+        tr->ckp.treeVectorLength = treeVectorLength;
+        tr->ckp.rearrangementsMax = rearrangementsMax;
+        tr->ckp.rearrangementsMin = rearrangementsMin;
+        tr->ckp.thoroughIterations = thoroughIterations;
+        tr->ckp.fastIterations = fastIterations;
+
+        tr->ckp.lh = lh;
+        tr->ckp.previousLh = previousLh;
+        tr->ckp.difference = difference;
+        tr->ckp.epsilon    = epsilon;
+
+        writeCheckpoint(tr);
+      }
+
       if(impr)
 	{	    
 	  printResult(tr, adef, FALSE);
 	  rearrangementsMin = 1;
 	  rearrangementsMax = adef->stepwidth;	
 
-	 
-
 	  if(tr->searchConvergenceCriterion)
 	    {
 	      int bCounter = 0;	      
 
 	      if(thoroughIterations > 1)
-		cleanupHashTable(h, (thoroughIterations % 2));		
+		cleanupHashTable(tr->convHashT, (thoroughIterations % 2));
 		
-	      bitVectorInitravSpecial(bitVectors, tr->nodep[1]->back, tr->mxtips, vLength, h, thoroughIterations % 2, BIPARTITIONS_RF, (branchInfo *)NULL,
+	      bitVectorInitravSpecial(tr->bitVectors, tr->nodep[1]->back, tr->mxtips, tr->vLength, tr->convHashT, thoroughIterations % 2, BIPARTITIONS_RF, (branchInfo *)NULL,
 				      &bCounter, 1, FALSE, FALSE);	    
 	      
-	      assert(bCounter == tr->mxtips - 3);	    	   
+	      assert(bCounter == tr->mxtips - 3);
+
+	      {
+		char
+		  *buffer = (char*)calloc(tr->treeStringLength, sizeof(char));
+
+      #ifdef _DEBUG_CHECKPOINTING
+		printf("Storing tree in slot %d\n", thoroughIterations % 2);
+      #endif
+
+		Tree2String(buffer, tr, tr->start->back, FALSE, TRUE, FALSE, FALSE, FALSE, adef, SUMMARIZE_LH, FALSE, FALSE, FALSE, FALSE);
+
+		if(thoroughIterations % 2 == 0)
+		  memcpy(tr->tree0, buffer, tr->treeStringLength * sizeof(char));
+		else
+		  memcpy(tr->tree1, buffer, tr->treeStringLength * sizeof(char));
+
+		free(buffer);
+	      }
 	      
 	      if(thoroughIterations > 0)
 		{
-		  double rrf = convergenceCriterion(h, tr->mxtips);
+		  double rrf = convergenceCriterion(tr->convHashT, tr->mxtips);
 		  
 		  if(rrf <= 0.01) /* 1% cutoff */
 		    {
 		      printBothOpen("ML search converged at thorough SPR cycle %d with stopping criterion\n", thoroughIterations);
 		      printBothOpen("Relative Robinson-Foulds (RF) distance between respective best trees after one succseful SPR cycle: %f%s\n", rrf, "%");
-		      goto cleanup;
+		      goto CLEANUP;
 		    }
 		  else		    
 		    printBothOpen("ML search convergence criterion thorough cycle %d->%d Relative Robinson-Foulds %f\n", thoroughIterations - 1, thoroughIterations, rrf);
 		}
 	    }
-
-	 
 	   	  
 	  thoroughIterations++;	  
 	}			  			
@@ -1516,7 +1673,7 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
 	  rearrangementsMax += adef->stepwidth;
 	  rearrangementsMin += adef->stepwidth; 	        	      
 	  if(rearrangementsMax > adef->max_rearrange)	     	     	 
-	    goto cleanup; 	   
+	    goto CLEANUP;
 	}
       treeEvaluate(tr, 1.0);
      
@@ -1556,7 +1713,7 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
                       
     }
 
- cleanup: 
+CLEANUP:
 
 #ifdef _TERRACES
   {
@@ -1596,10 +1753,10 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
   
   if(tr->searchConvergenceCriterion)
     {
-      freeBitVectors(bitVectors, 2 * tr->mxtips);
-      rax_free(bitVectors);
-      freeHashTable(h);
-      rax_free(h);
+      freeBitVectors(tr->bitVectors, 2 * tr->mxtips);
+      rax_free(tr->bitVectors);
+      freeHashTable(tr->convHashT);
+      rax_free(tr->convHashT);
     }
   
   freeBestTree(bestT);

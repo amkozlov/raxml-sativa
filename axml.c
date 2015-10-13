@@ -910,6 +910,8 @@ static boolean setupTree (tree *tr, analdef *adef)
   //printf("tips %d Tree String Length %d old length %d\n", tr->mxtips, tr->treeStringLength,tr->mxtips * (nmlngth+128) + 256 + tr->mxtips * 2 );
 
   tr->tree_string  = (char*)rax_calloc(tr->treeStringLength, sizeof(char)); 
+  tr->tree0 = (char*)calloc(tr->treeStringLength, sizeof(char));
+  tr->tree1 = (char*)calloc(tr->treeStringLength, sizeof(char));
 
   if(!adef->readTaxaOnly)
     {
@@ -928,6 +930,8 @@ static boolean setupTree (tree *tr, analdef *adef)
       printf("ERROR: Unable to obtain sufficient tree memory\n");
       return  FALSE;
     }
+
+  tr->nodeBaseAddress = p0;
 
   if (!(tr->nodep = (nodeptr *) rax_malloc((2*tr->mxtips) * sizeof(nodeptr))))
     {
@@ -996,6 +1000,8 @@ static boolean setupTree (tree *tr, analdef *adef)
       for(i = 0; i < tr->numBranches; i++)
 	tr->partitionSmoothed[i] = FALSE;
     }
+
+  tr->vLength = 0;
 
   return TRUE;
 }
@@ -3504,6 +3510,8 @@ static void initAdef(analdef *adef)
   adef->noSequenceCheck = FALSE;
   adef->useBFGS = TRUE;
   adef->setThreadAffinity = FALSE;
+
+  adef->useCheckpoint          = FALSE;
 }
 
 static int modelExists(char *model, analdef *adef)
@@ -4767,6 +4775,7 @@ static void printREADME(void)
   printf("      [-T numberOfThreads] [-u] [-U] [-v] [-V] [-w outputDirectory] [-W slidingWindowSize]\n");
   printf("      [-x rapidBootstrapRandomNumberSeed] [-X] [-y] [-Y quartetGroupingFileName|ancestralSequenceCandidatesFileName]\n");
   printf("      [-z multipleTreesFile] [-#|-N numberOfRuns|autoFC|autoMR|autoMRE|autoMRE_IGN]\n");
+  printf("      [-Z checkpointFile]\n");
 #ifdef _WAYNE_MPI
   printf("      [--silent][--no-seq-check][--no-bfgs]\n");
 #else
@@ -5136,6 +5145,8 @@ static void printREADME(void)
   printf("              It can also be used to compute per site log likelihoods in combination with \"-f g\"\n");
   printf("              and to read a bunch of trees for a couple of other options (\"-f h\", \"-f m\", \"-f n\").\n");
   printf("\n");
+  printf("      -Z      Restart tree search from a checkpoint (RAxML_binaryCheckpoint.RUN_ID).\n");
+  printf("\n");
   printf("      -#|-N   Specify the number of alternative runs on distinct starting trees\n");
   printf("              In combination with the \"-b\" option, this will invoke a multiple boostrap analysis\n");
   printf("              Note that \"-N\" has been added as an alternative since \"-#\" sometimes caused problems\n");
@@ -5408,7 +5419,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
       
       flag = 0;
       
-      c = getopt_long(argc,argv, "R:T:E:N:B:L:P:O:S:Y:A:G:I:J:K:W:l:x:z:g:r:e:a:b:c:f:i:m:t:w:s:n:o:q:#:p:vudyjhHkMDFQUOVCX", long_options, &option_index/*&optind, &optarg*/);
+      c = getopt_long(argc,argv, "R:T:E:N:B:L:P:O:S:Y:A:G:I:J:K:W:Z:l:x:z:g:r:e:a:b:c:f:i:m:t:w:s:n:o:q:#:p:vudyjhHkMDFQUOVCX", long_options, &option_index/*&optind, &optarg*/);
          
       if(c == -1)
 	break;          
@@ -6323,6 +6334,10 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 		modelSet = 1;
 	    }
 	    break;
+	  case 'Z':
+	    adef->useCheckpoint = TRUE;
+	    strcpy(binaryCheckpointInputName, optarg);
+	    break;
 	  default:
 	    if(flagCheck)
 	      {
@@ -6922,6 +6937,12 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
       errorExit(-1);
     }
 
+  if(adef->useCheckpoint && adef->mode != BIG_RAPID_MODE)
+    {
+      if(processID == 0)
+	printf("\n Error: Resuming from a checkpoint is not supported for the algorithm you specified: it only works for tree search\n");
+      errorExit(-1);
+    }
   
   {
 #ifdef WIN32
@@ -7012,6 +7033,8 @@ static void makeFileNames(void)
   strcpy(mesquiteTrees, workdir);
   strcpy(mesquiteMLTrees, workdir);
   strcpy(mesquiteMLLikes, workdir);
+  strcpy(binaryCheckpointName, workdir);
+  strcpy(binaryCheckpointBackupName, workdir);
   
   strcat(verboseSplitsFileName,             "RAxML_verboseSplits.");
   strcat(permFileName,                      "RAxML_parsimonyTree.");
@@ -7036,6 +7059,8 @@ static void makeFileNames(void)
   strcat(mesquiteTrees,                     "RAxML_mesquiteTrees.");
   strcat(mesquiteMLTrees,                   "RAxML_mesquite_ML_Trees.");
   strcat(mesquiteMLLikes,                   "RAxML_mesquite_ML_Likes.");
+  strcat(binaryCheckpointName, 		    "RAxML_binaryCheckpoint.");
+  strcat(binaryCheckpointBackupName, 	    "RAxML_binaryCheckpointBackup.");
 
   strcat(verboseSplitsFileName,            run_id);
   strcat(permFileName,                     run_id);
@@ -7060,6 +7085,8 @@ static void makeFileNames(void)
   strcat(mesquiteTrees,                    run_id);
   strcat(mesquiteMLTrees,                  run_id);
   strcat(mesquiteMLLikes,                  run_id);
+  strcat(binaryCheckpointName, 		   run_id);
+  strcat(binaryCheckpointBackupName, 	   run_id);
 
 #ifdef _WAYNE_MPI  
   {
@@ -10982,7 +11009,7 @@ static void extractTaxaFromTopology(tree *tr, rawdata *rdta, cruncheddata *cdta,
 }
 
 
-static void myfwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream)
+void myfwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream)
 {
   size_t  
     bytes_written = fwrite(ptr, size, nmemb, stream);
@@ -11089,7 +11116,7 @@ void writeBinaryModel(tree *tr, analdef *adef)
   fclose(f);
 }
 
-static void myfread(void *ptr, size_t size, size_t nmemb, FILE *stream)
+void myfread(void *ptr, size_t size, size_t nmemb, FILE *stream)
 {
   size_t
     bytes_read;
@@ -12978,9 +13005,8 @@ int main (int argc, char *argv[])
     pinToCore(0);
 #endif 
     
-    
-
     masterTime = gettime();
+    accumulatedTime = 0.0;
 
     globalArgc = argc;
     globalArgv = (char **)rax_malloc(sizeof(char *) * argc);

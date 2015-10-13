@@ -79,9 +79,12 @@ char run_id[128] = "",
   mesquiteMLTrees[1024]="",
   mesquiteMLLikes[1024] = "";
 
+char
+  binaryCheckpointName[1024] = "",
+  binaryCheckpointBackupName[1024] = "",
+  binaryCheckpointInputName[1024] = "";
 
-
-
+double accumulatedTime;
 
 char *protModels[NUM_PROT_MODELS] = {"DAYHOFF", "DCMUT", "JTT", "MTREV", "WAG", "RTREV", "CPREV", "VT", 
 				     "BLOSUM62", "MTMAM", "LG", "MTART", "MTZOA", "PMB", "HIVB", "HIVW", 

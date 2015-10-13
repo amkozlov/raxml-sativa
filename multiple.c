@@ -1538,8 +1538,11 @@ void doInference(tree *tr, analdef *adef, rawdata *rdta, cruncheddata *cdta)
 
       if(i == 0)
 	printBaseFrequencies(tr);
-     
-      getStartingTree(tr, adef); 
+
+      if(adef->useCheckpoint)
+	restart(tr, adef);
+      else
+	getStartingTree(tr, adef);
                        
       computeBIGRAPID(tr, adef, TRUE);  
 

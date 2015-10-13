@@ -798,6 +798,56 @@ typedef  struct
 
 /**************************************************************/
 
+/****  CHECKPOINTS  *******************************************/
+
+#define REARR_SETTING 1
+#define FAST_SPRS     2
+#define SLOW_SPRS     3
+
+typedef struct {
+
+  int state;
+
+  unsigned int vLength;
+
+  int rearrangementsMax;
+  int rearrangementsMin;
+  int thoroughIterations;
+  int fastIterations;
+  int treeVectorLength;
+  int mintrav;
+  int maxtrav;
+  int bestTrav;
+  int    Thorough;
+  int    optimizeRateCategoryInvocations;
+
+  double accumulatedTime;
+
+  double startLH;
+  double lh;
+  double previousLh;
+  double difference;
+  double epsilon;
+
+  boolean impr;
+  boolean cutoff;
+
+  double tr_startLH;
+  double tr_endLH;
+  double tr_likelihood;
+  double tr_bestOfNode;
+
+  double tr_lhCutoff;
+  double tr_lhAVG;
+  double tr_lhDEC;
+  int    tr_NumberOfCategories;
+  int    tr_itCount;
+  int    tr_doCutoff;
+
+
+} checkPointState;
+
+/****  CHECKPOINTS  *******************************************/
 
 typedef  struct  {
   boolean optimizeAllTrees;
@@ -1070,6 +1120,18 @@ typedef  struct  {
   double ascMissing;
   boolean useAscMissing;
 
+  /* checkpoints START */
+  nodeptr          nodeBaseAddress;
+  checkPointState  ckp;
+
+  unsigned int vLength;
+  unsigned int **bitVectors;
+  hashtable *convHashT;
+
+  char *tree0;
+  char *tree1;
+  /* checkpoints END */
+
 } tree;
 
 
@@ -1178,6 +1240,8 @@ typedef  struct {
   boolean       noSequenceCheck;
   boolean       useBFGS;
   boolean       setThreadAffinity;
+
+  boolean       useCheckpoint;
 } analdef;
 
 
@@ -1210,7 +1274,11 @@ typedef struct
 
 /****************************** FUNCTIONS ****************************************************/
 
+extern void myfwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
+extern void myfread(void *ptr, size_t size, size_t nmemb, FILE *stream);
 
+extern void writeCheckpoint(tree *tr);
+extern void readCheckpoint(tree *tr, analdef *adef);
 
 extern void ascertainmentBiasSequence(unsigned char tip[32], int numStates, int dataType, int nodeNumber, int *ascMissingVector);
 

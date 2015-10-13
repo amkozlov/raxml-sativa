@@ -1288,8 +1288,6 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
   if(tr->searchConvergenceCriterion)
     {
       treeVectorLength = 1;
-      tr->bitVectors = initBitVector(tr, &tr->vLength);
-      tr->convHashT = initHashTable(tr->mxtips * 4);
     }
 
   bestT = (bestlist *) rax_malloc(sizeof(bestlist));

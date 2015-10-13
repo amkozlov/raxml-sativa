@@ -1002,6 +1002,11 @@ static boolean setupTree (tree *tr, analdef *adef)
     }
 
   tr->vLength = 0;
+  if(tr->searchConvergenceCriterion)
+    {
+      tr->bitVectors = initBitVector(tr, &tr->vLength);
+      tr->convHashT = initHashTable(tr->mxtips * 4);
+    }
 
   return TRUE;
 }

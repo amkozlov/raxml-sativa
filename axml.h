@@ -1242,6 +1242,7 @@ typedef  struct {
   boolean       setThreadAffinity;
 
   boolean       useCheckpoint;
+  boolean 	verbose;
 } analdef;
 
 

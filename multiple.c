@@ -1533,8 +1533,9 @@ void doInference(tree *tr, analdef *adef, rawdata *rdta, cruncheddata *cdta)
       tr->checkPointCounter = 0;
          
       loopTime = gettime();
-                                             
-      initModel(tr, rdta, cdta, adef); 
+
+      if (!adef->startingTreeOnly)
+	initModel(tr, rdta, cdta, adef);
 
       if(i == 0)
 	printBaseFrequencies(tr);

@@ -2670,6 +2670,9 @@ static void checkSequences(tree *tr, rawdata *rdta, analdef *adef)
 
   if(adef->checkForUndeterminedSequences)
     {
+      if (adef->verbose)
+	printBothOpen("Checking for entirely undetermined sequences...\n");
+
       for(i = 1; i < n; i++)
 	{
 	  j = 1;
@@ -2700,6 +2703,9 @@ static void checkSequences(tree *tr, rawdata *rdta, analdef *adef)
 	  errorExit(-1);
 	}
     }
+
+  if (adef->verbose)
+    printBothOpen("Checking for entirely undetermined columns...\n");
 
   for(i = 0; i <= rdta->sites; i++)
     modelList[i] = -1;
@@ -2739,6 +2745,9 @@ static void checkSequences(tree *tr, rawdata *rdta, analdef *adef)
 
   if (adef->checkForDuplicateSequences)
     {
+      if (adef->verbose)
+	printBothOpen("Checking for duplicate sequences...\n");
+
       for(i = 1; i < n; i++)
 	{
 	  if(omissionList[i] == 0)
@@ -3517,6 +3526,7 @@ static void initAdef(analdef *adef)
   adef->setThreadAffinity = FALSE;
 
   adef->useCheckpoint          = FALSE;
+  adef->verbose                = FALSE;
 }
 
 static int modelExists(char *model, analdef *adef)
@@ -5398,7 +5408,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
   while(1)
     {      
       static struct 
-	option long_options[17] =
+	option long_options[18] =
 	{	 
 	  {"mesquite",                  no_argument,       &flag, 1},
 	  {"silent",                    no_argument,       &flag, 1},
@@ -5416,6 +5426,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 	  {"asc-miss",                  required_argument, &flag, 1},	 	 
 	  {"set-thread-affinity",       no_argument,       &flag, 1},
 	  {"no-dup-check", 		no_argument, 	   &flag, 1},
+	  {"verbose", 			no_argument, 	   &flag, 1},
 	  {0, 0, 0, 0}
 	};
       
@@ -5624,6 +5635,9 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 	      break;
 	    case 15:
 	      adef->checkForDuplicateSequences = FALSE;
+	      break;
+	    case 16:
+	      adef->verbose = TRUE;
 	      break;
 	    default:
 	      if(flagCheck)
@@ -13052,12 +13066,16 @@ int main (int argc, char *argv[])
 	  extractTaxaFromTopology(tr, rdta, cdta, bootStrapFile);
       }
     
+    makeFileNames();
+
+    if (adef->verbose)
+      printBothOpen("Reading the alignment...\n");
+
     getinput(adef, rdta, cdta, tr);
     
     
 
     checkOutgroups(tr, adef);
-    makeFileNames();
     
 #if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI))
     MPI_Barrier(MPI_COMM_WORLD);
@@ -13093,7 +13111,9 @@ int main (int argc, char *argv[])
     
     
     if(!adef->noSequenceCheck && !adef->readTaxaOnly && adef->mode != FAST_SEARCH && adef->mode != SH_LIKE_SUPPORTS)
-      checkSequences(tr, rdta, adef);
+      {
+	checkSequences(tr, rdta, adef);
+      }
     else
       printBothOpen("\n\nWARNING: RAxML is not checking sequences for duplicate seqs and sites with missing data!\n\n");
     
@@ -13138,6 +13158,9 @@ int main (int argc, char *argv[])
 	for(i = 0; i < tr->NumberOfModels; i++)	  
 	  if(tr->partitionData[i].ascBias)
 	    countAscBias++;
+
+	if (adef->verbose)
+	  printBothOpen("Compressing the alignment patterns...\n");
 
 	makeweights(adef, rdta, cdta, tr, countAscBias);
 	makevalues(rdta, cdta, tr, adef);      

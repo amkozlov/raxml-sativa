@@ -76,6 +76,8 @@
 
 #include "axml.h"
 
+int nv_calls, vec_count;
+
 extern const unsigned int mask32[32]; 
 /* vector-specific stuff */
 
@@ -225,6 +227,9 @@ void newviewParsimonyIterativeFast(tree *tr)
     *ti = tr->ti,
     count = ti[0],
     index; 
+
+  nv_calls++;
+  vec_count += count-4;
 
   for(index = 4; index < count; index += 4)
     {      
@@ -1717,6 +1722,9 @@ void makeParsimonyTreeFast(tree *tr, analdef *adef, boolean full)
 
   /* double t; */
 
+  if (adef->verbose)
+    printBothOpen("Generating a randomized parsimony tree...\n");
+
   determineUninformativeSites(tr, informative);     
 
   compressDNA(tr, informative, FALSE);
@@ -1815,10 +1823,13 @@ void makeParsimonyTreeFast(tree *tr, analdef *adef, boolean full)
       f = tr->start;
     }     
   
+  double t = gettime();
+
+  nv_calls = vec_count = 0;
   while(tr->ntips < tr->mxtips) 
     {	
       nodeptr q;
-      
+
       tr->bestParsimony = INT_MAX;
       nextsp = ++(tr->ntips);             
       p = tr->nodep[perm[nextsp]];                 
@@ -1850,6 +1861,13 @@ void makeParsimonyTreeFast(tree *tr, analdef *adef, boolean full)
 	
 	newviewParsimonyIterativeFast(tr);	
       }
+
+      if (adef->verbose && tr->ntips % 1000 == 0)
+	{
+	  printBothOpen("Tips inserted: %d (%.3f s, calls: %d, vecs: %d)\n", tr->ntips, (gettime() - t), nv_calls / 1000, vec_count / 1000);
+	  t = gettime();
+	  nv_calls = vec_count = 0;
+	}
     }    
   
   //printf("ADD: %d\n", tr->bestParsimony); 
@@ -2043,8 +2061,11 @@ void makeRandomTree(tree *tr, analdef *adef)
   nodeptr *branches;
   
   branches = (nodeptr *)rax_malloc(sizeof(nodeptr) * (2 * tr->mxtips));
-  perm = (int *)rax_malloc((tr->mxtips + 1) * sizeof(int));                         
-  
+  perm = (int *)rax_malloc((tr->mxtips + 1) * sizeof(int));
+
+  if (adef->verbose)
+    printBothOpen("Generating a random tree...\n");
+
   makePermutation(perm, 1, tr->mxtips, adef);              
   
   tr->ntips = 0;       	       
@@ -2075,6 +2096,8 @@ void makeRandomTree(tree *tr, analdef *adef)
       
       insertRandom(p->back, randomBranch, tr->numBranches);
       
+      if (adef->verbose && tr->ntips % 1000 == 0)
+	printBothOpen("Tips inserted: %d\n", tr->ntips);
     }
   rax_free(perm);            
   rax_free(branches);

@@ -39,7 +39,14 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
+
 #include "axml.h"
+
+#if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI) || defined (_SATIVA_MPI))
+extern int processes;
+#endif
+
+extern int processID;
 
 extern char **globalArgv;
 extern int globalArgc;
@@ -243,7 +250,6 @@ void leaveOneOutTest(tree *tr, analdef *adef)
   else
     slowInsertions = tr->numberOfBranches - 2;
 
-
   brInfo = (LeaveBranchInfo*) rax_calloc(branchesCount, sizeof(LeaveBranchInfo));
 //  LeaveBranchInfo* brInfo2 = (LeaveBranchInfo*) rax_calloc(branchesCount, sizeof(LeaveBranchInfo));
 
@@ -260,6 +266,16 @@ void leaveOneOutTest(tree *tr, analdef *adef)
   strcpy(fileName,         workdir);
   strcat(fileName,         "RAxML_leaveOneOutResults.");
   strcat(fileName,         run_id);
+#ifdef _SATIVA_MPI
+  {
+    char
+      buf[64];
+
+    sprintf(buf, "%d", processID);
+    strcat(fileName,       ".PID.");
+    strcat(fileName,       buf);
+  }
+#endif
   strcat(fileName,         ".jplace");
 
   jsonFile = myfopen(fileName, "wb");
@@ -272,8 +288,6 @@ void leaveOneOutTest(tree *tr, analdef *adef)
   initBranchInfo(tr, brInfoOrig);
 
   assert(tr->branchCounter == tr->numberOfBranches);
-
-  /* prune and re-insert one tip at a time into all branches of the remaining tree */
 
 #ifdef _PROFILE_L1OUT
   double
@@ -288,7 +302,26 @@ void leaveOneOutTest(tree *tr, analdef *adef)
     newviewSlow;
 #endif
 
-  for(tips = 1; tips <= tr->mxtips; tips++)
+int
+  startTip,
+  endTip;
+
+#ifdef _SATIVA_MPI
+  int slice = tr->mxtips / processes + 1;
+  startTip = processID * slice + 1;
+  endTip = MIN(tr->mxtips, (processID + 1) * slice);
+
+  printBothOpen("Running in MPI mode: each of %d processes will process %d taxa\n\n", processes, slice);
+#else
+  startTip = 1;
+  endTip = tr->mxtips;
+#endif
+
+  double
+    tipStartTime;
+
+  /* prune and re-insert one tip at a time into all branches of the remaining tree */
+  for(tips = startTip; tips <= endTip; tips++)
   {
 
 #ifdef _PROFILE_L1OUT
@@ -298,6 +331,8 @@ void leaveOneOutTest(tree *tr, analdef *adef)
       smoothTime = 0.;
       tr->mr_thresh = 0;
 #endif
+
+      tipStartTime = gettime();
 
       nodeptr
         myStart,
@@ -328,7 +363,8 @@ void leaveOneOutTest(tree *tr, analdef *adef)
       /* prune the taxon, optimizing the branch between p1 and p2 */
       removeNodeBIG(tr, p,  tr->numBranches);
 
-      printBothOpen("Pruning taxon Number %d [%s]\n", tips, tr->nameList[tips]);
+      if (adef->verbose)
+	printBothOpen("Pruning taxon Number %d [%s]\n", tips, tr->nameList[tips]);
 
       /* first pass - heuristic (no smoothing) */
       for(i = 0; i < branchesCount; i++)
@@ -404,8 +440,6 @@ void leaveOneOutTest(tree *tr, analdef *adef)
 //      if (origBranch != brInfo[0].branchNumber)
 //          printf("Nodes: %d %d %d %d\n", p1->number, p2->number, p1->back->number, p2->back->number);
 
-      printBothOpen("Placement:  %d %d %f\n", brInfo[0].branchNumber, origBranch, brInfo[0].lh);
-
       /* re-connect taxon to its original position  */
 
       hookup(p->next,       p1,      p1z, tr->numBranches);
@@ -459,10 +493,16 @@ void leaveOneOutTest(tree *tr, analdef *adef)
       }
 
       fprintf(jsonFile, "], \"n\":[\"%s\"]}", tr->nameList[tips]);
-      if (tips == tr->mxtips)
+      if (tips == endTip)
           fprintf(jsonFile, "\n");
       else
           fprintf(jsonFile, ",\n");
+
+      if ((tips - startTip - 1) % 10 == 0)
+	fflush(jsonFile);
+
+      if (adef->verbose)
+	printBothOpen("[%.3f s] Placement:  %d %d %f\n", gettime() - tipStartTime, brInfo[0].branchNumber, origBranch, brInfo[0].lh);
 
 #ifdef _PROFILE_L1OUT
       double finalizeTime = gettime() - lastTime;
@@ -501,6 +541,6 @@ void leaveOneOutTest(tree *tr, analdef *adef)
   printBothOpen("\nTime for EPA leave-one-out test: %f\n", gettime() - masterTime);
   printBothOpen("Best placements written to file %s\n", fileName);
 
-  exit(0);
+//  exit(0);
 }
 

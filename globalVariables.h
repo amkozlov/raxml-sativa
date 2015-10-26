@@ -28,7 +28,7 @@
  *  Bioinformatics 2006; doi: 10.1093/bioinformatics/btl446
  */
 
-#if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI))
+#if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI) || defined (_SATIVA_MPI))
 int processes;
 #endif
 

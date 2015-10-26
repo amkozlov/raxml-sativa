@@ -50,7 +50,7 @@
 #include <inttypes.h>
 #include <getopt.h>
 
-#if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI))
+#if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI) || defined (_SATIVA_MPI))
 #include <mpi.h>
 #endif
 
@@ -138,7 +138,7 @@ static void printBoth(FILE *f, const char* format, ... )
 
 void printBothOpen(const char* format, ... )
 {
-#ifdef _QUARTET_MPI
+#if (defined(_QUARTET_MPI) || defined(_SATIVA_MPI))
   if(processID == 0)
 #endif
     {
@@ -6931,6 +6931,15 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 
 #endif
 
+#ifdef _SATIVA_MPI
+  if(adef->mode != EPA_LEAVE_ONE_OUT)
+    {
+      if(processID == 0)
+	printf("Only EPA leave-one-out test mode (-f O) is implemented in the SATIVA-MPI-Version\n");
+      errorExit(-1);
+    }
+#endif
+
    if((adef->mode == TREE_EVALUATION || adef->mode == OPTIMIZE_BR_LEN_SCALER) && (isCat(adef)))
      {
        if(processID == 0)
@@ -7015,7 +7024,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 void errorExit(int e)
 {
 
-#if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI))
+#if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI) || defined (_SATIVA_MPI))
   MPI_Finalize();
 #endif
 
@@ -8478,6 +8487,8 @@ static void finalizeInfoFile(tree *tr, analdef *adef)
 	  break;
 	case ROOT_TREE:
 	  printBothOpen("\n\nTime for tree rooting: %f\n\n", t);
+	  break;
+	case EPA_LEAVE_ONE_OUT:
 	  break;
 	default:
 	  assert(0);
@@ -13001,7 +13012,7 @@ static void setupAscMissing(tree *tr, analdef *adef)
 
 int main (int argc, char *argv[])
 {
-#if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI))
+#if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI) || defined (_SATIVA_MPI))
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &processID);
   MPI_Comm_size(MPI_COMM_WORLD, &processes);
@@ -13077,7 +13088,7 @@ int main (int argc, char *argv[])
 
     checkOutgroups(tr, adef);
     
-#if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI))
+#if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI) || defined (_SATIVA_MPI))
     MPI_Barrier(MPI_COMM_WORLD);
 #endif
     
@@ -13351,7 +13362,7 @@ int main (int argc, char *argv[])
 
 	  getStartingTree(tr, adef);
 	  leaveOneOutTest(tr, adef);
-	  exit(0);
+//	  exit(0);
 	  break;
 	case CLASSIFY_MP:
 	  getStartingTree(tr, adef);
@@ -13540,7 +13551,7 @@ int main (int argc, char *argv[])
       
       finalizeInfoFile(tr, adef);
 
-#if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI))
+#if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI) || defined (_SATIVA_MPI))
       MPI_Finalize();
 #endif
   }

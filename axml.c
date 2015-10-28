@@ -13552,6 +13552,7 @@ int main (int argc, char *argv[])
       finalizeInfoFile(tr, adef);
 
 #if (defined(_WAYNE_MPI) || defined (_QUARTET_MPI) || defined (_SATIVA_MPI))
+      MPI_Barrier(MPI_COMM_WORLD);
       MPI_Finalize();
 #endif
   }

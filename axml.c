@@ -11096,9 +11096,12 @@ void writeBinaryModel(tree *tr, analdef *adef)
 
   /* cdta */   
 
-  myfwrite(tr->cdta->rateCategory, sizeof(int), tr->rdta->sites + 1, f);
-  myfwrite(tr->cdta->patrat, sizeof(double), tr->rdta->sites + 1, f);
-  myfwrite(tr->cdta->patratStored, sizeof(double), tr->rdta->sites + 1, f);
+  if(tr->rateHetModel == CAT)
+    {
+      myfwrite(tr->cdta->rateCategory, sizeof(int), tr->rdta->sites + 1, f);
+      myfwrite(tr->cdta->patrat, sizeof(double), tr->rdta->sites + 1, f);
+      myfwrite(tr->cdta->patratStored, sizeof(double), tr->rdta->sites + 1, f);
+    }
 
   /* partition contributions */
 
@@ -11244,11 +11247,14 @@ void readBinaryModel(tree *tr, analdef *adef)
 
   /* cdta */   
 
-  myfread(tr->cdta->rateCategory, sizeof(int),    (size_t)(tr->rdta->sites + 1), f);
-  myfread(tr->cdta->patrat,       sizeof(double), (size_t)(tr->rdta->sites + 1), f);
-  myfread(tr->cdta->patratStored, sizeof(double), (size_t)(tr->rdta->sites + 1), f);
+   if(tr->rateHetModel == CAT)
+     {
+	myfread(tr->cdta->rateCategory, sizeof(int),    (size_t)(tr->rdta->sites + 1), f);
+	myfread(tr->cdta->patrat,       sizeof(double), (size_t)(tr->rdta->sites + 1), f);
+	myfread(tr->cdta->patratStored, sizeof(double), (size_t)(tr->rdta->sites + 1), f);
+     }
 
-  /* partition contributions */
+   /* partition contributions */
 
   myfread(tr->partitionContributions, sizeof(double), tr->NumberOfModels, f);
   

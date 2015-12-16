@@ -228,8 +228,10 @@ void newviewParsimonyIterativeFast(tree *tr)
     count = ti[0],
     index; 
 
+#ifdef _SAT_PROFILE
   nv_calls++;
-  vec_count += count-4;
+  vec_count += (count-4) / 4;
+#endif
 
   for(index = 4; index < count; index += 4)
     {      
@@ -1486,26 +1488,14 @@ static void reorderNodes(tree *tr, nodeptr *np, nodeptr p, int *count)
     return;
   else
     {              
-      for(i = tr->mxtips + 1; (i <= (tr->mxtips + tr->mxtips - 1)) && (found == 0); i++)
-	{
-	  if (p == np[i] || p == np[i]->next || p == np[i]->next->next)
-	    {
-	      if(p == np[i])			       
-		tr->nodep[*count + tr->mxtips + 1] = np[i];		 		
-	      else
-		{
-		  if(p == np[i]->next)		  
-		    tr->nodep[*count + tr->mxtips + 1] = np[i]->next;		     	   
-		  else		   
-		    tr->nodep[*count + tr->mxtips + 1] = np[i]->next->next;		    		    
-		}
+      nodeptr n = np[p->number];
 
-	      found = 1;	      	     
-	      *count = *count + 1;
-	    }
-	}            
-     
-      assert(found != 0);
+      assert(p == n || p == n->next || p == n->next->next);
+
+      int ind = *count + tr->mxtips + 1;
+      tr->nodep[ind] = p;
+
+      *count += 1;
 
       reorderNodes(tr, np, p->next->back, count);     
       reorderNodes(tr, np, p->next->next->back, count);                
@@ -1729,6 +1719,9 @@ void makeParsimonyTreeFast(tree *tr, analdef *adef, boolean full)
 
   compressDNA(tr, informative, FALSE);
 
+  if (adef->verbose)
+    printBothOpen("Parsimony patterns: %d\n", tr->partitionData[0].parsimonyLength);
+
   rax_free(informative); 
 
   tr->ti = (int*)rax_malloc(sizeof(int) * 4 * (size_t)tr->mxtips);  
@@ -1825,10 +1818,11 @@ void makeParsimonyTreeFast(tree *tr, analdef *adef, boolean full)
   
   double t = gettime();
 
-  nv_calls = vec_count = 0;
   while(tr->ntips < tr->mxtips) 
     {	
       nodeptr q;
+
+      nv_calls = vec_count = 0;
 
       tr->bestParsimony = INT_MAX;
       nextsp = ++(tr->ntips);             
@@ -1862,12 +1856,24 @@ void makeParsimonyTreeFast(tree *tr, analdef *adef, boolean full)
 	newviewParsimonyIterativeFast(tr);	
       }
 
-      if (adef->verbose && tr->ntips % 1000 == 0)
+#ifdef _SAT_PROFILE
+      if (tr->ntips % 1000 == 0)
 	{
-	  printBothOpen("Tips inserted: %d (%.3f s, calls: %d, vecs: %d)\n", tr->ntips, (gettime() - t), nv_calls / 1000, vec_count / 1000);
+	  printBothOpen("Tips inserted: %d (time: %.3f s, calls: %d, vecs: %d)\n", tr->ntips, (gettime() - t), nv_calls, vec_count);
 	  t = gettime();
 	  nv_calls = vec_count = 0;
+
+//	  int counter = 4;
+//	  computeTraversalInfoParsimony(q, tr->ti, &counter, tr->mxtips, TRUE);
+//	  tr->ti[0] = counter;
+//	  newviewParsimonyIterativeFast(tr);
+//	  printBothOpen("Full traversal time: %.3f s, calls: %d, vecs: %d)\n", (gettime() - t), nv_calls, vec_count);
+//
+//	  t = gettime();
+//	  nv_calls = vec_count = 0;
 	}
+#endif
+
     }    
   
   //printf("ADD: %d\n", tr->bestParsimony); 
@@ -2117,10 +2123,9 @@ void nodeRectifier(tree *tr)
   /* TODO why is tr->rooted set to FALSE here ?*/
   
   for(i = tr->mxtips + 1; i <= (tr->mxtips + tr->mxtips - 1); i++)
-    np[i] = tr->nodep[i];           
+    np[tr->nodep[i]->number] = tr->nodep[i];
   
   reorderNodes(tr, np, tr->start->back, &count); 
-
  
   rax_free(np);
 }

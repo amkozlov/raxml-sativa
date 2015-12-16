@@ -1797,6 +1797,9 @@ void getStartingTree(tree *tr, analdef *adef)
   
   if(adef->restart) 
     {	 	     	     
+      if (adef->verbose)
+        printBothOpen("Reading the starting/constraint tree...\n");
+
       INFILE = myfopen(tree_file, "rb");	
                  		
       if(!adef->grouping)	
@@ -1864,8 +1867,14 @@ void getStartingTree(tree *tr, analdef *adef)
 	    }
 	  else
 	    {
-	      evaluateGenericInitrav(tr, tr->start); 
+	      if (adef->verbose)
+	        printBothOpen("Evaluating the tree...\n");
+	      evaluateGenericInitrav(tr, tr->start);
+	      if (adef->verbose)
+	        printBothOpen("Initial LH: %f, optimizing branch lengths...\n", tr->likelihood);
 	      treeEvaluate(tr, 1);
+	      if (adef->verbose)
+	        printBothOpen("LH after optimization: %f\n", tr->likelihood);
 	    }
 	}
                

@@ -203,7 +203,7 @@ static void genericBaseFrequencies(tree *tr, const int numFreqs, rawdata *rdta, 
 
 	      assert(stateCount == 1);
 
-	      statesPresent[state] = 1;
+  	      statesPresent[state] = 1;
 	    }		    		    	  	
 	}
     }
@@ -212,7 +212,6 @@ static void genericBaseFrequencies(tree *tr, const int numFreqs, rawdata *rdta, 
     if(statesPresent[i] == 1)
       countStatesPresent++;
 
-
   if(tr->partitionData[model].optimizeBaseFrequencies)
     {   
       for(l = 0; l < numFreqs; l++)	    
@@ -220,10 +219,9 @@ static void genericBaseFrequencies(tree *tr, const int numFreqs, rawdata *rdta, 
     }
   else
     {
-      
-      for(l = 0; l < numFreqs; l++)	    
+      for(l = 0; l < numFreqs; l++)
 	pfreqs[l] = 1.0 / ((double)numFreqs);
-      
+
       for (k = 1; k <= 8; k++) 
 	{	     	   	    	      			
 	  for(l = 0; l < numFreqs; l++)
@@ -270,6 +268,8 @@ static void genericBaseFrequencies(tree *tr, const int numFreqs, rawdata *rdta, 
 	  
 	  for(l = 0; l < numFreqs; l++)
 	    pfreqs[l] = sumf[l] / acc;	     
+
+//	  printBothOpen("iter: %d, pfreqs: %f %f %f %f\n", k, pfreqs[0], pfreqs[1], pfreqs[2], pfreqs[3]);
 	}
 
       if(countStatesPresent < numFreqs)
@@ -317,10 +317,149 @@ static void genericBaseFrequencies(tree *tr, const int numFreqs, rawdata *rdta, 
 }
 
 
+static void genericBaseFrequenciesFast(tree *tr, const int numFreqs, rawdata *rdta, cruncheddata *cdta, int lower, int upper, int model, boolean smoothFrequencies,
+				   const unsigned int *bitMask)
+{
+  double
+    wj,
+    acc,
+    pfreqs[64],
+    sumf[64],
+    temp[64];
 
+  int
+    statesPresent[64],
+    countStatesPresent = 0,
+    i,
+    j,
+    k,
+    l;
 
+  unsigned char  *yptr;
 
+  if(tr->partitionData[model].optimizeBaseFrequencies)
+    {
+      for(l = 0; l < numFreqs; l++)
+	tr->partitionData[model].frequencies[l] = 1.0 / ((double)numFreqs);
+    }
+  else
+    {
+      for(i = 0; i < numFreqs; i++)
+        statesPresent[i] = 0;
 
+      for(i = 0; i < rdta->numsp; i++)
+        {
+          yptr = &(rdta->y0[((size_t)i) * (tr->originalCrunchedLength)]);
+
+          for(j = lower; j < upper; j++)
+	    {
+	      unsigned int
+		state = 0,
+		stateCount = 0,
+		code = bitMask[yptr[j]];
+
+	      if(precomputed16_bitcount(code) == 1)
+		{
+		  for(k = 0; k < numFreqs; k++)
+		    if(code & mask32[k])
+		      {
+			state = k;
+			stateCount++;
+		      }
+
+		  assert(stateCount == 1);
+
+		  if (!statesPresent[state])
+		    {
+		      statesPresent[state] = 1;
+		      countStatesPresent++;
+		      if (countStatesPresent == numFreqs)
+			break;
+		    }
+		}
+	    }
+        }
+
+      if(countStatesPresent < numFreqs)
+	{
+	  printf("Partition %s number %d has a problem, the number of expected states is %d the number of states that are present is %d.\n",
+		 tr->partitionData[model].partitionName, model, numFreqs, countStatesPresent);
+	  printf("Please go and fix your data!\n\n");
+	}
+
+      for(l = 0; l < numFreqs; l++)
+	pfreqs[l] = 1.0 / ((double)numFreqs);
+
+      for(l = 0; l < numFreqs; l++)
+	sumf[l] = 0.0;
+
+      for (i = 0; i < rdta->numsp; i++)
+	{
+	  yptr =  &(rdta->y0[((size_t)i) * ((size_t)tr->originalCrunchedLength)]);
+
+	  for(j = lower; j < upper; j++)
+	    {
+	      unsigned int code = bitMask[yptr[j]];
+	      assert(code >= 1);
+
+	      int ambgStates = precomputed16_bitcount(code);
+
+	      // ignore gaps in frequencies calculation
+	      if(ambgStates == numFreqs)
+		continue;
+
+	      for(l = 0; l < numFreqs; l++)
+		{
+		  if((code >> l) & 1)
+		    sumf[l] += ((double)cdta->aliaswgt[j]) / ambgStates;
+		}
+	    }
+        }
+
+      for(l = 0, acc = 0.0; l < numFreqs; l++)
+	{
+	  acc += sumf[l];
+	}
+
+      for(l = 0; l < numFreqs; l++)
+	pfreqs[l] = sumf[l] / acc;
+
+      if(smoothFrequencies)
+	{
+	  //printf("smoothing!\n");
+	  smoothFreqs(numFreqs, pfreqs,  tr->partitionData[model].frequencies, &(tr->partitionData[model]));
+	}
+      else
+	{
+	  boolean
+	    zeroFreq = FALSE;
+
+	  char
+	    typeOfData[1024];
+
+	  getDataTypeString(tr, model, typeOfData);
+
+	  for(l = 0; l < numFreqs; l++)
+	    {
+	      if(pfreqs[l] == 0.0)
+		{
+		  printBothOpen("Empirical base frequency for state number %d is equal to zero in %s data partition %s\n", l, typeOfData, tr->partitionData[model].partitionName);
+		  printBothOpen("Since this is probably not what you want to do, RAxML will soon exit.\n\n");
+		  zeroFreq = TRUE;
+		}
+	    }
+
+	  if(zeroFreq)
+	    exit(-1);
+
+	  for(l = 0; l < numFreqs; l++)
+	    {
+	      assert(pfreqs[l] > 0.0);
+	      tr->partitionData[model].frequencies[l] = pfreqs[l];
+	    }
+	}
+    }
+}
 
 
 static void baseFrequenciesGTR(rawdata *rdta, cruncheddata *cdta, tree *tr)
@@ -393,9 +532,14 @@ static void baseFrequenciesGTR(rawdata *rdta, cruncheddata *cdta, tree *tr)
 	      tr->partitionData[model].frequencies[3] = 0.25;
 	    }
 	  else
-	    genericBaseFrequencies(tr, states, rdta, cdta, lower, upper, model, 
-				   getSmoothFreqs(tr->partitionData[model].dataType),
-				   getBitVector(tr->partitionData[model].dataType));
+	    {
+	      // NB: here for DNA we use a faster method to compute base frequencies,
+	      // which simply ignores all gaps and thereby avoids iterative "un-smoothing" used
+	      // in genericBaseFrequencies()
+	      genericBaseFrequenciesFast(tr, states, rdta, cdta, lower, upper, model,
+				     getSmoothFreqs(tr->partitionData[model].dataType),
+				     getBitVector(tr->partitionData[model].dataType));
+	    }
 	  break;
 	default:
 	  assert(0);     

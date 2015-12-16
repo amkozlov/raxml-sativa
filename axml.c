@@ -3526,6 +3526,7 @@ static void initAdef(analdef *adef)
   adef->setThreadAffinity = FALSE;
 
   adef->useCheckpoint          = FALSE;
+  adef->newCheckpoint 	       = TRUE;
   adef->verbose                = FALSE;
 }
 
@@ -7591,10 +7592,13 @@ void printResult(tree *tr, analdef *adef, boolean finalPrint)
 		  
 		  break;
 		case CAT:
-		  if(adef->mesquite)
-		    Tree2String(tr->tree_string, tr, tr->start->back, TRUE, TRUE, FALSE, FALSE, finalPrint, adef, SUMMARIZE_LH, FALSE, FALSE, FALSE, FALSE);
-		  else
-		    Tree2String(tr->tree_string, tr, tr->start->back, FALSE, TRUE, FALSE, FALSE, finalPrint, adef, NO_BRANCHES, FALSE, FALSE, FALSE, FALSE);
+		  // why not print CAT branches?
+		  Tree2String(tr->tree_string, tr, tr->start->back, TRUE, TRUE, FALSE, FALSE, finalPrint, adef, SUMMARIZE_LH, FALSE, FALSE, FALSE, FALSE);
+
+//		  if(adef->mesquite)
+//		    Tree2String(tr->tree_string, tr, tr->start->back, TRUE, TRUE, FALSE, FALSE, finalPrint, adef, SUMMARIZE_LH, FALSE, FALSE, FALSE, FALSE);
+//		  else
+//		    Tree2String(tr->tree_string, tr, tr->start->back, FALSE, TRUE, FALSE, FALSE, finalPrint, adef, NO_BRANCHES, FALSE, FALSE, FALSE, FALSE);
 
 		  logFile = myfopen(temporaryFileName, "wb");
 		  fprintf(logFile, "%s", tr->tree_string);
@@ -13170,17 +13174,36 @@ int main (int argc, char *argv[])
 	  countNonSev = 0,
 	  countLG4 =0;
 	
+	if (adef->perGeneBranchLengths && tr->NumberOfModels > NUM_BRANCHES)
+	  {
+            printBothOpen("ERROR: unlinked branch lengths are not supported by RAxML-SATIVA for efficiency reasons!\n");
+            printBothOpen("If you really need to use them, try changing #define NUM_BRANCHES %d in axml.h and recompile!\n", tr->NumberOfModels);
+	    errorExit(-1);
+	  }
+
 	assert(countAscBias == 0);
 
 	for(i = 0; i < tr->NumberOfModels; i++)	  
 	  if(tr->partitionData[i].ascBias)
 	    countAscBias++;
 
-	if (adef->verbose)
-	  printBothOpen("Compressing the alignment patterns...\n");
-
-	makeweights(adef, rdta, cdta, tr, countAscBias);
-	makevalues(rdta, cdta, tr, adef);      
+	if (adef->useCheckpoint && adef->newCheckpoint)
+	  {
+	    if (adef->verbose)
+	      printBothOpen("Loading checkpoint...\n");
+	    tr->rdta = rdta;
+	    tr->cdta = cdta;
+	    tr->patternPosition = (int*)rax_malloc(sizeof(int) * rdta->sites);
+	    tr->columnPosition  = (int*)rax_malloc(sizeof(int) * rdta->sites);
+	    readCheckpoint(tr, adef, FALSE);
+	  }
+	else
+	  {
+	    if (adef->verbose)
+	      printBothOpen("Compressing the alignment patterns...\n");
+	    makeweights(adef, rdta, cdta, tr, countAscBias);
+	  }
+	makevalues(rdta, cdta, tr, adef);
 	
 	for(i = 0; i < tr->NumberOfModels; i++)
 	  {	    
@@ -13320,6 +13343,8 @@ int main (int argc, char *argv[])
     masterBarrier(THREAD_INIT_PARTITION, tr);
     if(!adef->readTaxaOnly)  
       masterBarrier(THREAD_ALLOC_LIKELIHOOD, tr);
+    if (adef->useCheckpoint && adef->newCheckpoint)
+      readCheckpoint(tr, adef, TRUE);
 #else
     if(!adef->readTaxaOnly)  
       allocNodex(tr);

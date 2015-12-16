@@ -380,15 +380,6 @@ void writeCheckpoint(tree *tr)
   if (ckpCount > 0)
      rename(binaryCheckpointName, binaryCheckpointBackupName);
 
-//  char
-//    extendedName[2048],
-//    buf[64];
-//
-//  strcpy(extendedName,  binaryCheckpointName);
-//  strcat(extendedName, "_");
-//  sprintf(buf, "%d", ckpCount);
-//  strcat(extendedName, buf);
-
   ckpCount++;
 
   FILE
@@ -421,6 +412,16 @@ void writeCheckpoint(tree *tr)
   myfwrite(tr->tree1, sizeof(char), tr->treeStringLength, f);
 
   myfwrite(&tr->rateHetModel, sizeof(int), 1, f);
+
+  myfwrite(&tr->cdta->endsite, sizeof(int), 1, f);
+  myfwrite(tr->patternPosition, sizeof(int), tr->rdta->sites, f);
+  myfwrite(tr->columnPosition, sizeof(int), tr->rdta->sites, f);
+  myfwrite(tr->cdta->alias, sizeof(int), tr->rdta->sites + 1, f);
+  myfwrite(tr->cdta->aliaswgt, sizeof(int), tr->rdta->sites + 1, f);
+  myfwrite(tr->model, sizeof(int), tr->rdta->sites + 1, f);
+  myfwrite(tr->dataVector, sizeof(int), tr->rdta->sites + 1, f);
+
+  myfwrite(tr->partitionContributions, sizeof(double), tr->NumberOfModels, f);
 
   if(tr->rateHetModel == CAT)
     {
@@ -520,14 +521,9 @@ static void readTree(tree *tr, FILE *f, analdef *adef)
     }
 
   }
-
-  evaluateGenericInitrav(tr, tr->start);
-
-  printBothOpen("RAxML Restart with likelihood: %1.50f\n", tr->likelihood);
 }
 
-
-void readCheckpoint(tree *tr, analdef *adef)
+void readCheckpoint(tree *tr, analdef *adef, boolean readModel)
 {
   int
     model;
@@ -568,6 +564,19 @@ void readCheckpoint(tree *tr, analdef *adef)
 
   assert(ratehet == tr->rateHetModel);
 
+  if (adef->newCheckpoint)
+  {
+      myfread(&tr->cdta->endsite, sizeof(int), 1, f);
+      myfread(tr->patternPosition, sizeof(int), tr->rdta->sites, f);
+      myfread(tr->columnPosition, sizeof(int), tr->rdta->sites, f);
+      myfread(tr->cdta->alias, sizeof(int), tr->rdta->sites + 1, f);
+      myfread(tr->cdta->aliaswgt, sizeof(int), tr->rdta->sites + 1, f);
+      myfread(tr->model, sizeof(int), tr->rdta->sites + 1, f);
+      myfread(tr->dataVector, sizeof(int), tr->rdta->sites + 1, f);
+
+      myfread(tr->partitionContributions, sizeof(double), tr->NumberOfModels, f);
+  }
+
   if(tr->rateHetModel == CAT)
     {
       myfread(tr->cdta->rateCategory, sizeof(int), tr->rdta->sites + 1, f);
@@ -575,7 +584,7 @@ void readCheckpoint(tree *tr, analdef *adef)
       myfread(tr->cdta->patratStored, sizeof(double), tr->rdta->sites + 1, f);
     }
 
-  if(tr->searchConvergenceCriterion)
+  if(tr->searchConvergenceCriterion && !readModel)
   {
     int bCounter = 0;
 
@@ -616,46 +625,52 @@ void readCheckpoint(tree *tr, analdef *adef)
 
   /* pInfo */
 
-  for(model = 0; model < tr->NumberOfModels; model++)
-  {
-    int
-      dataType = tr->partitionData[model].dataType;
+  if (readModel)
+    {
+      for(model = 0; model < tr->NumberOfModels; model++)
+      {
+        int
+          dataType = tr->partitionData[model].dataType;
 
-    myfread(&(tr->partitionData[model].numberOfCategories), sizeof(int), 1, f);
-    myfread(tr->partitionData[model].perSiteRates, sizeof(double), tr->maxCategories, f);
-    myfread(tr->partitionData[model].EIGN, sizeof(double), pLengths[dataType].eignLength, f);
-    myfread(tr->partitionData[model].EV, sizeof(double),  pLengths[dataType].evLength, f);
-    myfread(tr->partitionData[model].EI, sizeof(double),  pLengths[dataType].eiLength, f);
+        myfread(&(tr->partitionData[model].numberOfCategories), sizeof(int), 1, f);
+        myfread(tr->partitionData[model].perSiteRates, sizeof(double), tr->maxCategories, f);
+        myfread(tr->partitionData[model].EIGN, sizeof(double), pLengths[dataType].eignLength, f);
+        myfread(tr->partitionData[model].EV, sizeof(double),  pLengths[dataType].evLength, f);
+        myfread(tr->partitionData[model].EI, sizeof(double),  pLengths[dataType].eiLength, f);
 
-    myfread(tr->partitionData[model].frequencies, sizeof(double),  pLengths[dataType].frequenciesLength, f);
-    myfread(tr->partitionData[model].tipVector, sizeof(double),  pLengths[dataType].tipVectorLength, f);
-    myfread(tr->partitionData[model].substRates, sizeof(double),  pLengths[dataType].substRatesLength, f);
-    myfread(&(tr->partitionData[model].alpha), sizeof(double), 1, f);
-    myfread(&(tr->partitionData[model].propInvariant), sizeof(double), 1, f);
-    makeGammaCats(tr->rateHetModel, tr->partitionData[model].alpha, tr->partitionData[model].gammaRates, 4, tr->useGammaMedian, tr->partitionData[model].propInvariant);
-  }
+        myfread(tr->partitionData[model].frequencies, sizeof(double),  pLengths[dataType].frequenciesLength, f);
+        myfread(tr->partitionData[model].tipVector, sizeof(double),  pLengths[dataType].tipVectorLength, f);
+        myfread(tr->partitionData[model].substRates, sizeof(double),  pLengths[dataType].substRatesLength, f);
+        myfread(&(tr->partitionData[model].alpha), sizeof(double), 1, f);
+        myfread(&(tr->partitionData[model].propInvariant), sizeof(double), 1, f);
+        makeGammaCats(tr->rateHetModel, tr->partitionData[model].alpha, tr->partitionData[model].gammaRates, 4, tr->useGammaMedian, tr->partitionData[model].propInvariant);
+      }
 
-#ifdef _FINE_GRAIN_MPI
-  masterBarrierMPI(THREAD_COPY_INIT_MODEL, tr);
-#endif
+    #ifdef _FINE_GRAIN_MPI
+      masterBarrierMPI(THREAD_COPY_INIT_MODEL, tr);
+    #endif
 
-#ifdef _USE_PTHREADS
-  masterBarrier(THREAD_COPY_INIT_MODEL, tr);
-#endif
+    #ifdef _USE_PTHREADS
+      masterBarrier(THREAD_COPY_INIT_MODEL, tr);
+    #endif
 
-  updatePerSiteRates(tr, FALSE);
+      updatePerSiteRates(tr, FALSE);
 
-  readTree(tr, f, adef);
+      readTree(tr, f, adef);
+    }
 
   fclose(f);
-
 }
 
+void checkpointTreeEval(tree *tr)
+{
+  evaluateGenericInitrav(tr, tr->start);
+
+  printBothOpen("RAxML Restart with likelihood: %1.50f\n", tr->likelihood);
+}
 
 void restart(tree *tr, analdef *adef)
 {
-  readCheckpoint(tr, adef);
-
   switch(tr->ckp.state)
   {
     case REARR_SETTING:
@@ -667,5 +682,7 @@ void restart(tree *tr, analdef *adef)
     default:
       assert(0);
   }
+
+  checkpointTreeEval(tr);
 }
 

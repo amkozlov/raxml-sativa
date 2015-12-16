@@ -83,7 +83,7 @@
 
 #define badRear         -1
 
-#define NUM_BRANCHES   128
+#define NUM_BRANCHES   1
 
 #define TRUE            1
 #define FALSE            0
@@ -1132,11 +1132,10 @@ typedef  struct  {
   char *tree1;
   /* checkpoints END */
 
+#ifdef _SATIVA_MPI
+  boolean mpiParallelize;
+#endif
 } tree;
-
-
-
-
 
 typedef struct conntyp {
     double           z[NUM_BRANCHES];           /* branch length */
@@ -1158,6 +1157,7 @@ typedef  struct {
     int              scrNum;      /* position in sorted list of scores */
     int              tplNum;      /* position in sorted list of trees */
 
+    int              hash;        /* hash value to speed up comparisons */
     } topol;
 
 typedef struct {
@@ -1242,6 +1242,7 @@ typedef  struct {
   boolean       setThreadAffinity;
 
   boolean       useCheckpoint;
+  boolean 	newCheckpoint;  /* new checkpoints store some additional info to speed up restarts (avoid pattern re-compression etc.)*/
   boolean 	verbose;
 } analdef;
 
@@ -1279,7 +1280,7 @@ extern void myfwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
 extern void myfread(void *ptr, size_t size, size_t nmemb, FILE *stream);
 
 extern void writeCheckpoint(tree *tr);
-extern void readCheckpoint(tree *tr, analdef *adef);
+extern void readCheckpoint(tree *tr, analdef *adef, boolean readModel);
 
 extern void ascertainmentBiasSequence(unsigned char tip[32], int numStates, int dataType, int nodeNumber, int *ascMissingVector);
 

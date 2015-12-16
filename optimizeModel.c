@@ -3456,7 +3456,7 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
       currentLikelihood = tr->likelihood;      
 
 #ifdef _DEBUG_MOD_OPT
-      printf("start: %1.40f\n", currentLikelihood);
+      printBothOpen("start: %1.40f\n", currentLikelihood);
 #endif
 
       if(tr->NumberOfModels == 1 && tr->partitionData[0].dataType == DNA_DATA && adef->useBFGS && !(tr->useJC69 || tr->useK80 || tr->useHKY85))
@@ -3473,7 +3473,7 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
       evaluateGenericInitrav(tr, tr->start); 
       
 #ifdef _DEBUG_MOD_OPT
-      printf("after rates %1.40f\n", tr->likelihood);
+      printBothOpen("after rates %1.40f\n", tr->likelihood);
 #endif
 
       autoProtein(tr);
@@ -3486,20 +3486,28 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
 #ifdef _DEBUG_MOD_OPT
       evaluateGenericInitrav(tr, tr->start); 
       if(adef->mode != OPTIMIZE_BR_LEN_SCALER)
-	printf("after br-len 1 %f\n", tr->likelihood);
+	printBothOpen("after br-len 1 %f\n", tr->likelihood);
       else
-	printf("after opt-scaler 1 %f\n", tr->likelihood);     
+	printBothOpen("after opt-scaler 1 %f\n", tr->likelihood);
 #endif
 
       evaluateGenericInitrav(tr, tr->start);
 
       optBaseFreqs(tr, modelEpsilon, freqList);
-      
-      evaluateGenericInitrav(tr, tr->start);           
+
+      evaluateGenericInitrav(tr, tr->start);
 
 #ifdef _DEBUG_MOD_OPT
-      evaluateGenericInitrav(tr, tr->start); 
-      printf("after optBaseFreqs 1 %f\n", tr->likelihood);
+      evaluateGenericInitrav(tr, tr->start);
+      printBothOpen("after optBaseFreqs 1 %f\n", tr->likelihood);
+      if (adef->verbose)
+	{
+          printBothOpen("Base frequencies: ");
+	  int i;
+          for(i = 0; i < tr->partitionData[0].states; i++)
+	    printBothOpen("%1.3f ", tr->partitionData[0].frequencies[i]);
+          printBothOpen("\n");
+	}
 #endif     
 
       if(adef->mode != OPTIMIZE_BR_LEN_SCALER)
@@ -3510,9 +3518,9 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
 #ifdef _DEBUG_MOD_OPT
       evaluateGenericInitrav(tr, tr->start); 
       if(adef->mode != OPTIMIZE_BR_LEN_SCALER)
-	printf("after br-len 2 %f\n", tr->likelihood);
+	printBothOpen("after br-len 2 %f\n", tr->likelihood);
       else
-	printf("after opt-scaler 2%f\n", tr->likelihood);
+	printBothOpen("after opt-scaler 2%f\n", tr->likelihood);
 #endif  
 
       switch(tr->rateHetModel)
@@ -3522,14 +3530,14 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
 
 #ifdef _DEBUG_MOD_OPT
 	  evaluateGenericInitrav(tr, tr->start); 
-	  printf("after alphas %1.40f\n", tr->likelihood);
+	  printBothOpen("after alphas %1.40f\n", tr->likelihood);
 #endif
 
 	  optInvar(tr, modelEpsilon, invarList);
 
 #ifdef _DEBUG_MOD_OPT
 	  evaluateGenericInitrav(tr, tr->start); 
-	  printf("after invar %1.40f\n", tr->likelihood);
+	  printBothOpen("after invar %1.40f\n", tr->likelihood);
 #endif
 
 	  if(adef->mode != OPTIMIZE_BR_LEN_SCALER)		      	    	   	 
@@ -3539,7 +3547,7 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
 	  
 #ifdef _DEBUG_MOD_OPT
 	  evaluateGenericInitrav(tr, tr->start); 
-	  printf("after br-len 2 %1.40f\n", tr->likelihood);
+	  printBothOpen("after br-len 2 %1.40f\n", tr->likelihood);
 #endif
 
 	  break;
@@ -3548,7 +3556,7 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
 
 #ifdef _DEBUG_MOD_OPT
 	  evaluateGenericInitrav(tr, tr->start); 
-	  printf("after alphas %1.40f\n", tr->likelihood);
+	  printBothOpen("after alphas %1.40f\n", tr->likelihood);
 #endif
 
 	 
@@ -3564,9 +3572,9 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
 #ifdef _DEBUG_MOD_OPT
 	  evaluateGenericInitrav(tr, tr->start);   
 	  if(adef->mode != OPTIMIZE_BR_LEN_SCALER)
-	    printf("after br-len 3 %f\n", tr->likelihood);
+	    printBothOpen("after br-len 3 %f\n", tr->likelihood);
 	  else
-	    printf("after opt-scaler 3%f\n", tr->likelihood);	  
+	    printBothOpen("after opt-scaler 3%f\n", tr->likelihood);
 #endif
 
 	 
@@ -3585,7 +3593,15 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
 
 #ifdef _DEBUG_MOD_OPT
 	  evaluateGenericInitrav(tr, tr->start); 
-	  printf("after cat-opt %f\n", tr->likelihood);
+	  printBothOpen("after cat-opt %f\n", tr->likelihood);
+	  if (adef->verbose && catOpt < 4)
+	    {
+	          printBothOpen("CAT rates: ");
+		  int i;
+	          for(i = 0; i < tr->partitionData[0].numberOfCategories; i++)
+		    printBothOpen("%1.7f ", tr->partitionData[0].perSiteRates[i]);
+	          printBothOpen("\n");
+	    }
 #endif	  
 
 	  break;	  

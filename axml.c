@@ -352,7 +352,7 @@ static void setRateHetAndDataIncrement(tree *tr, analdef *adef)
       tr->discreteRateCategories = 4;      
       break;
     case CAT:
-      if((adef->boot && !adef->bootstrapBranchLengths) || (adef->mode == CLASSIFY_ML) || (tr->catOnly))	
+      if((adef->boot && !adef->bootstrapBranchLengths) || (adef->mode == CLASSIFY_ML) || (adef->mode == EPA_LEAVE_ONE_OUT) || (tr->catOnly))
 	tr->discreteRateCategories = 1; 	
       else
 	tr->discreteRateCategories = 4;
@@ -6966,7 +6966,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
       errorExit(-1);
     }
 
-  if(adef->useCheckpoint && adef->mode != BIG_RAPID_MODE)
+  if(adef->useCheckpoint && adef->mode != BIG_RAPID_MODE && adef->mode != EPA_LEAVE_ONE_OUT)
     {
       if(processID == 0)
 	printf("\n Error: Resuming from a checkpoint is not supported for the algorithm you specified: it only works for tree search\n");

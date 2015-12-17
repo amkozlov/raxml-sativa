@@ -1122,7 +1122,7 @@ static boolean addElementLen (FILE *fp, tree *tr, nodeptr p, boolean readBranchL
       endCounter = tr->branchLabelCounter;
       
       /*printf("Branch %8.20f %d\n", branch, tr->numBranches);*/
-      if(adef->mode == CLASSIFY_ML)
+      if(adef->mode == CLASSIFY_ML || adef->mode == EPA_LEAVE_ONE_OUT)
 	{
 	  double 
 	    x[NUM_BRANCHES];
@@ -1376,7 +1376,7 @@ int treeReadLen (FILE *fp, tree *tr, boolean readBranches, boolean readNodeLabel
  
   if(!topologyOnly)
     {
-      if(adef->mode != CLASSIFY_ML)
+      if(adef->mode != CLASSIFY_ML && adef->mode != EPA_LEAVE_ONE_OUT)
 	{
 	  if(adef->mode != OPTIMIZE_BR_LEN_SCALER)
 	    assert(readBranches == FALSE && readNodeLabels == FALSE);
@@ -1823,6 +1823,7 @@ void getStartingTree(tree *tr, analdef *adef)
 	      treeReadLen(INFILE, tr, TRUE, FALSE, FALSE, adef, TRUE, FALSE);
 	      break;
 	    case CLASSIFY_ML:
+	    case EPA_LEAVE_ONE_OUT:
 	      if(adef->useBinaryModelFile)
 		{
 		  if(tr->saveMemory)				 

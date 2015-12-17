@@ -318,7 +318,9 @@ int
 #endif
 
   double
-    tipStartTime;
+    tipStartTime,
+    sortStartTime,
+    slowStartTime;
 
   /* prune and re-insert one tip at a time into all branches of the remaining tree */
   for(tips = startTip; tips <= endTip; tips++)
@@ -389,7 +391,11 @@ int
 
 //      memcpy(brInfo2, brInfo, sizeof(LeaveBranchInfo) * branchesCount);
 
+      sortStartTime = gettime();
+
       qsort(brInfo, branchesCount, sizeof(LeaveBranchInfo), branchInfoCompare);
+
+      slowStartTime = gettime();
 
 #ifdef _PROFILE_L1OUT
       fastSortTime = gettime() - lastTime;
@@ -499,10 +505,15 @@ int
           fprintf(jsonFile, ",\n");
 
       if ((tips - startTip - 1) % 10 == 0)
-	fflush(jsonFile);
+	{
+  	  fflush(jsonFile);
+  	  tr->ckp.state = EPA_L1OUT;
+	  writeCheckpoint(tr);
+	}
 
       if (adef->verbose)
 	printBothOpen("[%.3f s] Placement:  %d %d %f\n", gettime() - tipStartTime, brInfo[0].branchNumber, origBranch, brInfo[0].lh);
+      printBothOpen("[fast: %.3f slow: %.3f sort: %.3f]\n", sortStartTime - tipStartTime, gettime() - slowStartTime, slowStartTime - sortStartTime);
 
 #ifdef _PROFILE_L1OUT
       double finalizeTime = gettime() - lastTime;

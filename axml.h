@@ -803,6 +803,7 @@ typedef  struct
 #define REARR_SETTING 1
 #define FAST_SPRS     2
 #define SLOW_SPRS     3
+#define EPA_L1OUT     4
 
 typedef struct {
 

@@ -679,6 +679,8 @@ void restart(tree *tr, analdef *adef)
       break;
     case SLOW_SPRS:
       break;
+    case EPA_L1OUT:
+      break;
     default:
       assert(0);
   }

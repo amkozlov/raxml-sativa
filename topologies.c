@@ -275,6 +275,8 @@ static int saveSubtree (nodeptr p, topol *tpl, int numsp, int numBranches)
       r->valptr = r0[r->descend].valptr;   /* Inherit first child's value */
       }                                 /* End of internal node processing */
 
+  tpl->hash ^= *((int*) r->valptr); /* update hash value*/
+
   return  (r - r0);
 }
 
@@ -318,6 +320,7 @@ static void saveTree (tree *tr, topol *tpl)
 {
   connptr  r;  
   
+  tpl->hash = 0;    	/* reset hash */
   tpl->nextlink = 0;                             /* Reset link pointer */
   r = tpl->links + saveSubtree(minTreeTip(tr->start, tr->rdta->numsp), tpl, tr->rdta->numsp, tr->numBranches);  /* Save tree */
   r->sibling = 0;
@@ -490,6 +493,23 @@ static int  cmpTopol (void *tpl1, void *tpl2)
   return  cmpSubtopol(r1, r1, r2, r2);
 } 
 
+static int  cmpTopolHash (void *tpl1, void *tpl2)
+{
+  int  h1, h2;
+  int      cmp;
+
+  h1 = ((topol *) tpl1)->hash;
+  h2 = ((topol *) tpl2)->hash;
+  if (h1 == h2)
+    {
+      /* topologies equal OR hash collision -> fallback to slow comparison */
+      connptr r1 = ((topol *) tpl1)->links;
+      connptr r2 = ((topol *) tpl2)->links;
+      return  cmpSubtopol(r1, r1, r2, r2);
+    }
+  else
+    return (h1 > h2) ? -1 : 1;
+}
 
 
 static int  cmpTplScore (void *tpl1, void *tpl2)
@@ -547,13 +567,25 @@ static int  findTreeInList (bestlist *bt, tree *tr)
 		     bt->nvalid, cmpTopol);
 } 
 
+static int  findTreeInListFast (bestlist *bt, tree *tr)
+{
+  topol  *tpl;
+
+  tpl = bt->byScore[0];
+  saveTree(tr, tpl);
+  return  findInList((void *) tpl, (void **) (& (bt->byTopol[1])),
+		     bt->nvalid, cmpTopolHash);
+}
 
 int  saveBestTree (bestlist *bt, tree *tr)
 {    
   topol  *tpl, *reuse;
   int  tplNum, scrNum, reuseScrNum, reuseTplNum, i, oldValid, newValid;
   
-  tplNum = findTreeInList(bt, tr);
+//  tplNum = findTreeInList(bt, tr);
+
+  tplNum = findTreeInListFast(bt, tr);
+
   tpl = bt->byScore[0];
   oldValid = newValid = bt->nvalid;
   

@@ -42,12 +42,25 @@
 #include <ctype.h>
 #include <string.h>
 
+#if defined (_SATIVA_MPI)
+#include <mpi.h>
+#endif
 
 #include "axml.h"
 
+#if defined(_SATIVA_MPI)
+extern int processes;
+extern int processID;
+#endif
+
+extern int processID;
 extern int Thorough;
 extern int optimizeRateCategoryInvocations;
 extern infoList iList;
+
+#ifdef _SAT_PROFILE
+int nInserts;
+#endif
 
 
 boolean initrav (tree *tr, nodeptr p)
@@ -537,7 +550,12 @@ boolean insertBIG (tree *tr, nodeptr p, nodeptr q, int numBranches)
 	  tr->lzr[i] = p->next->next->z[i];
 	  tr->lzs[i] = p->z[i];            
 	}
-    }           
+    }
+
+#ifdef _SAT_PROFILE
+  nInserts++;
+#endif
+
   
   return  TRUE;
 }
@@ -692,6 +710,11 @@ boolean testInsertBIG (tree *tr, nodeptr p, nodeptr q)
 	}
     }
   
+#ifdef _SATIVA_MPI
+  if (tr->mpiParallelize)
+    doIt = doIt && (q->number % processes == processID);
+#endif
+
   if(doIt)
     {     
       if (! insertBIG(tr, p, q, tr->numBranches))       return FALSE;         
@@ -718,7 +741,7 @@ boolean testInsertBIG (tree *tr, nodeptr p, nodeptr q)
 	  tr->removeNode = p;   
 	  for(i = 0; i < tr->numBranches; i++)
 	    tr->currentZQR[i] = tr->zqr[i];      
-	  tr->endLH = tr->likelihood;                      
+	  tr->endLH = tr->likelihood;
 	}        
       
       hookup(q, r, qz, tr->numBranches);
@@ -894,7 +917,13 @@ double treeOptimizeRapid(tree *tr, int mintrav, int maxtrav, analdef *adef, best
   int i, index,
     *perm = (int*)NULL;   
 
+  double st_time = gettime();
+
   nodeRectifier(tr);
+
+#ifdef _SAT_PROFILE
+    printBothOpen("nodeRectifier time: %f s\n", gettime() - st_time);
+#endif
 
   if (maxtrav > tr->ntips - 3)  
     maxtrav = tr->ntips - 3;  
@@ -934,6 +963,12 @@ double treeOptimizeRapid(tree *tr, int mintrav, int maxtrav, analdef *adef, best
       makePermutation(perm, 1, n, adef);
     }
 
+  st_time = gettime();
+  double rest_time = 0;
+  double ins_time = 0;
+  int totalInserts = 0;
+  int totalRestores = 0;
+  int fastRestores = 0;
   for(i = 1; i <= tr->mxtips + tr->mxtips - 2; i++)
     {           
       tr->bestOfNode = unlikely;          
@@ -943,22 +978,84 @@ double treeOptimizeRapid(tree *tr, int mintrav, int maxtrav, analdef *adef, best
       else
 	index = i;
       
+#ifdef _SATIVA_MPI_0
+      MPI_Barrier(MPI_COMM_WORLD);
+      tr->mpiParallelize = TRUE;
+#endif
 
-
+      double t = gettime();
       if(rearrangeBIG(tr, tr->nodep[index], mintrav, maxtrav))
 	{    
+
+	  #ifdef _SATIVA_MPI_0
+	    printf("MPI rank %d, rNode: %d, iNode: %d, inserts: %d, LH: %f\n", processID, tr->removeNode->number, tr->insertNode->number, nInserts, tr->endLH);
+
+	    struct {
+	        double val;
+	        int   rank;
+	    } in, out;
+
+	    in.val = tr->endLH;
+	    in.rank = processID;
+
+	    MPI_Allreduce(&in, &out, 1, MPI_DOUBLE_INT, MPI_MAXLOC, MPI_COMM_WORLD);
+	    tr->endLH = out.val;
+
+	    int removeNodeNumber, insertNodeNumber;
+	    if (processID == out.rank)
+	      {
+		removeNodeNumber = tr->removeNode->number;
+		insertNodeNumber = tr->insertNode->number;
+	      }
+
+	    MPI_Bcast(&removeNodeNumber, 1, MPI_INT, out.rank, MPI_COMM_WORLD);
+	    MPI_Bcast(&insertNodeNumber, 1, MPI_INT, out.rank, MPI_COMM_WORLD);
+
+	    if (processID != out.rank)
+	      {
+		removeNodeNumber = tr->removeNode->number;
+		insertNodeNumber = tr->insertNode->number;
+	      }
+
+	    printf("MPI rank %d, rNode: %d, iNode: %d\n", processID, removeNodeNumber, insertNodeNumber);
+
+//	    double globalEndLH;
+//	    MPI_Allreduce(&tr->endLH, &globalEndLH, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+//	    tr->endLH = globalEndLH;
+//
+//	    int globalInserts;
+//	    MPI_Allreduce(&nInserts, &globalInserts, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+//	    nInserts = globalInserts;
+  	  printBothOpen("nodes: %d, inserts: %d, endLH: %f\n", i, nInserts, tr->endLH);
+	    #endif
+
+          ins_time += gettime() - t;
+	  t = gettime();
 	  if(Thorough)
 	    {
+
+#ifdef _SAT_PROFILE
+	      totalInserts += nInserts;
+#endif
 	      if(tr->endLH > tr->startLH)                 	
-		{			   	     
-		  restoreTreeFast(tr);	 	 
+		{
+		  restoreTreeFast(tr);
+		  fastRestores += 1;
+                  rest_time += gettime() - t;
 		  tr->startLH = tr->endLH = tr->likelihood;	 
 		  saveBestTree(bt, tr);
 		}
 	      else
 		{ 		  
-		  if(tr->bestOfNode != unlikely)		    	     
-		    restoreTopologyOnly(tr, bt);		    
+                  // fast heuristic for very large trees: do not store topologies during "early" iterations
+		  // since later on they will be most probably replaced by others, better scoring trees anyway
+		  int iterLeft = (tr->mxtips + tr->mxtips) - i;
+		  if (iterLeft < 10000 && tr->bestOfNode > bt->worst)
+		    {
+		      restoreTopologyOnly(tr, bt);
+		      totalRestores++;
+		      rest_time += gettime() - t;
+		    }
 		}	   
 	    }
 	  else
@@ -970,8 +1067,13 @@ double treeOptimizeRapid(tree *tr, int mintrav, int maxtrav, analdef *adef, best
 		  tr->startLH = tr->endLH = tr->likelihood;	  	 	  	  	  	  	  	  
 		}	    	  
 	    }
-	}     
-    }     
+	}
+
+#ifdef _SAT_PROFILE
+      if (i % 10000 == 0 || i == tr->mxtips + tr->mxtips - 2)
+	printBothOpen("[%.0f s, %.0f, %0.f] Processed nodes: %d, inserts: %d, restores: %d, fastRestores: %d, startLH: %f\n", gettime() - st_time, ins_time, rest_time, i, totalInserts, totalRestores, fastRestores, tr->startLH);;
+#endif
+    }
 
   if(!Thorough)
     {           
@@ -1268,6 +1370,10 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
    
   double lh, previousLh, difference, epsilon;              
   bestlist *bestT, *bt;  
+
+#ifdef _SATIVA_MPI
+      tr->mpiParallelize = FALSE;
+#endif
     
 #ifdef _TERRACES
   /* store the 20 best trees found in a dedicated list */
@@ -1297,6 +1403,10 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
   bt = (bestlist *) rax_malloc(sizeof(bestlist));      
   bt->ninit = 0;
   initBestTree(bt, 20, tr->mxtips); 
+
+#ifdef _SAT_PROFILE
+  printBothOpen("\nMemory used for best tree lists: %.3f MB\n", (2*tr->mxtips-3) * sizeof(connect) * 21. / (1024 * 1024));
+#endif
 
 #ifdef _TERRACES 
   /* initialize the tree list and the output file name for the current tree search/replicate */
@@ -1328,17 +1438,21 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
   {
       if(estimateModel)
         {
-          if(adef->useBinaryModelFile)
-    	{
-    	  readBinaryModel(tr, adef);
-    	  evaluateGenericInitrav(tr, tr->start);
-    	  treeEvaluate(tr, 2);
-    	}
-          else
-    	{
-    	  evaluateGenericInitrav(tr, tr->start);
-    	  modOpt(tr, adef, FALSE, 10.0);
-    	}
+	  if (adef->verbose)
+	    printBothOpen("Estimating the model...\n");
+	  if(adef->useBinaryModelFile)
+	  {
+	    readBinaryModel(tr, adef);
+	    evaluateGenericInitrav(tr, tr->start);
+	    treeEvaluate(tr, 2);
+	  }
+	  else
+	  {
+	    evaluateGenericInitrav(tr, tr->start);
+	    modOpt(tr, adef, FALSE, 10.0);
+	  }
+	  if (adef->verbose)
+	    printBothOpen("LH after model optimization: %f\n", tr->likelihood);
         }
       else
         treeEvaluate(tr, 2);
@@ -1555,7 +1669,8 @@ CLEANUP_FAST:
   else
     treeEvaluate(tr, 1.0);
 
-  printBothOpen("\nLogLikelihood after %d fast SPR cycles: %f\n", fastIterations, tr->likelihood);
+  if (adef->verbose)
+    printBothOpen("\nLogLikelihood after %d fast SPR cycles: %f\n", fastIterations, tr->likelihood);
 
 START_SLOW_SPRS:
   while(1)
@@ -1680,13 +1795,18 @@ START_SLOW_SPRS:
       
       printLog(tr, adef, FALSE);
       treeOptimizeRapid(tr, rearrangementsMin, rearrangementsMax, adef, bt);
-	
+
       impr = 0;			      		            
 
+      double st_time = gettime();
       for(i = 1; i <= bt->nvalid; i++)
 	{		 
-	  recallBestTree(bt, i, tr);	 	    	    	
-	  
+	  recallBestTree(bt, i, tr);
+
+#ifdef _SAT_PROFILE
+	    printBothOpen("Optimizing bestTree %d, start LH: %f, best LH: %f\n", i, tr->likelihood, lh);
+#endif
+
 	  treeEvaluate(tr, 0.25);
 	    	 
 	  if(adef->rellBootstrap)
@@ -1708,7 +1828,8 @@ START_SLOW_SPRS:
 	    }	   	   
 	}  
 
-                      
+      if (adef->verbose)
+	printBothOpen("Branch length optimization for %d topologies took: %f s, final LH: %f\n", bt->nvalid, gettime() - st_time, lh);
     }
 
 CLEANUP:

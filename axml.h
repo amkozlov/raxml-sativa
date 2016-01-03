@@ -699,6 +699,8 @@ typedef struct {
   //andre opt
   unsigned int *presenceMap;
 
+  double *tipEvalVector;
+
 } pInfo;
 
 
@@ -1133,6 +1135,8 @@ typedef  struct  {
   char *tree1;
   /* checkpoints END */
 
+  boolean useFastEvaluate;
+
 #ifdef _SATIVA_MPI
   boolean mpiParallelize;
 #endif
@@ -1245,6 +1249,9 @@ typedef  struct {
   boolean       useCheckpoint;
   boolean 	newCheckpoint;  /* new checkpoints store some additional info to speed up restarts (avoid pattern re-compression etc.)*/
   boolean 	verbose;
+
+  int l1outStartTip;
+  int l1outEndTip;
 } analdef;
 
 
@@ -1661,6 +1668,7 @@ extern void testInsertThoroughIterative(tree *tr, int branchNumber);
 #define THREAD_SETUP_PRESENCE_MAP           47
 #define THREAD_COPY_LG4X_EIGN               48
 
+#define THREAD_PRECOMPUTE_TIPEVAL	    60
 
 /*
 
@@ -1776,6 +1784,16 @@ void newviewGTRCATPROT_AVX(int tipCase, double *extEV,
 			       double *x1, double *x2, double *x3, double *tipVector,
 			       int *ex3, unsigned char *tipX1, unsigned char *tipX2,
 			   int n, double *left, double *right, int *wgt, int *scalerIncrement, const boolean useFastScaling);
+
+double evaluateGTRCAT_SAVE_AVX (int *ex1, int *ex2, int *cptr, int *wptr,
+    double *x1_start, double *x2_start, double *tipVector,
+    unsigned char *tipX1, int n, double *diagptable_start, const boolean fastScaling,
+    double *x1_gapColumn, double *x2_gapColumn, unsigned int *x1_gap, unsigned int *x2_gap);
+
+
+double evaluateGTRCAT_SAVE_AVX_FAST (int *ex2, int *wptr,
+    double *tipX1_start, double *x2_start, int n, const boolean fastScaling,
+    double *x2_gapColumn, unsigned int *x2_gap);
 
 #endif
 

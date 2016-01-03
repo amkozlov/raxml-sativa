@@ -1008,6 +1008,8 @@ static boolean setupTree (tree *tr, analdef *adef)
       tr->convHashT = initHashTable(tr->mxtips * 4);
     }
 
+  tr->useFastEvaluate = FALSE;
+
   return TRUE;
 }
 
@@ -3329,6 +3331,9 @@ static void allocPartitions(tree *tr)
       //andre-opt
       tr->partitionData[i].presenceMap = (unsigned int *)rax_calloc((size_t)tr->mxtips + 1 , sizeof(unsigned int));
 
+      // vector of pre-computed values for faster LH eval
+      tr->partitionData[i].tipEvalVector  = (double *)rax_malloc(sizeof(double) * tr->partitionData[i].width * 4);
+
 #ifndef _USE_PTHREADS    
       {
 	int j;
@@ -3528,6 +3533,9 @@ static void initAdef(analdef *adef)
   adef->useCheckpoint          = FALSE;
   adef->newCheckpoint 	       = TRUE;
   adef->verbose                = FALSE;
+
+  adef->l1outStartTip = 0;
+  adef->l1outEndTip = 0;
 }
 
 static int modelExists(char *model, analdef *adef)
@@ -5409,7 +5417,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
   while(1)
     {      
       static struct 
-	option long_options[18] =
+	option long_options[20] =
 	{	 
 	  {"mesquite",                  no_argument,       &flag, 1},
 	  {"silent",                    no_argument,       &flag, 1},
@@ -5428,6 +5436,8 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 	  {"set-thread-affinity",       no_argument,       &flag, 1},
 	  {"no-dup-check", 		no_argument, 	   &flag, 1},
 	  {"verbose", 			no_argument, 	   &flag, 1},
+	  {"l1out-start",        	required_argument, &flag, 1},
+	  {"l1out-end",  	      	required_argument, &flag, 1},
 	  {0, 0, 0, 0}
 	};
       
@@ -5639,6 +5649,20 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 	      break;
 	    case 16:
 	      adef->verbose = TRUE;
+	      break;
+	    case 17:  /* l1out_start */
+	      if(sscanf(optarg,"%u", &(adef->l1outStartTip)) != 1)
+		{
+		  printf("\nError parsing start tip number for EPA leave-one-out test, RAxML expects a positive integer value\n\n");
+		  errorExit(-1);
+		}
+	      break;
+	    case 18:  /* l1out_end */
+	      if(sscanf(optarg,"%u", &(adef->l1outEndTip)) != 1)
+		{
+		  printf("\nError parsing start tip number for EPA leave-one-out test, RAxML expects a positive integer value\n\n");
+		  errorExit(-1);
+		}
 	      break;
 	    default:
 	      if(flagCheck)
@@ -8898,7 +8922,9 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
       break;    
     case THREAD_EVALUATE:
       sendTraversalInfo(localTree, tr);
+      localTree->useFastEvaluate = tr->useFastEvaluate;
       result = evaluateIterative(localTree, FALSE);
+      localTree->useFastEvaluate = FALSE;
 
       if(localTree->NumberOfModels > 1)
 	{
@@ -8913,6 +8939,9 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
 	  for(model = 0; model < localTree->NumberOfModels; model++)
 	    localTree->executeModel[model] = TRUE;
 	}
+      break;
+    case THREAD_PRECOMPUTE_TIPEVAL:
+      precomputeTipEvalVector_GTRCAT(localTree, tr->insertNode);
       break;
     case THREAD_NEWVIEW_MASKED:
       sendTraversalInfo(localTree, tr);
@@ -9236,7 +9265,9 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
       break;
     case THREAD_EVALUATE_VECTOR:
       sendTraversalInfo(localTree, tr);
+      localTree->useFastEvaluate = tr->useFastEvaluate;
       result = evaluateIterative(localTree, TRUE);            
+      localTree->useFastEvaluate = FALSE;
      
       if(localTree->NumberOfModels > 1)
 	{
@@ -13195,6 +13226,11 @@ int main (int argc, char *argv[])
 	    tr->cdta = cdta;
 	    tr->patternPosition = (int*)rax_malloc(sizeof(int) * rdta->sites);
 	    tr->columnPosition  = (int*)rax_malloc(sizeof(int) * rdta->sites);
+
+            // we must determine the rate heterogeneity model here, to make sure
+            // it is the same model as in the checkpoint file
+            setRateHetAndDataIncrement(tr, adef);
+
 	    readCheckpoint(tr, adef, FALSE);
 	  }
 	else

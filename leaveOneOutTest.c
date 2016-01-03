@@ -70,6 +70,9 @@ int* branchList;
     newviewTime,
     evalTime,
     smoothTime;
+
+    int
+      newview_vcount;
 #endif
 
 static double getBranch(tree *tr, double *b, double *bb)
@@ -116,19 +119,21 @@ static void testInsertBranch(tree *tr, nodeptr r, int branchNumber, boolean doSm
   nodeptr
     q = branchNodeMap[brInfo[branchNumber].branchNumber];
 
-  if (!q) {
+  if (!q)
+    {
       printf("Missing node: %d\n", branchNumber);
       return;
-  }
+    }
 
   double
     result,
     qz[NUM_BRANCHES],
     z[NUM_BRANCHES];
 
+  /* q is the node at which we are inserting the pruned tip */
   nodeptr
-    x = q->back,
-    s = r->back;
+    x = q->back,  /* node adjacent to q, e.g. the other end of the insertion branch */
+    s = r->back; /*  s is the original tip we have pruned */
 
   int
     j;
@@ -136,13 +141,13 @@ static void testInsertBranch(tree *tr, nodeptr r, int branchNumber, boolean doSm
   for(j = 0; j < tr->numBranches; j++)
     {
       qz[j] = q->z[j];
-      z[j] = sqrt(qz[j]);
+      z[j] = sqrt(qz[j]); /* insert in the middle of the branch */
 
       if(z[j] < zmin)
-    z[j] = zmin;
+	z[j] = zmin;
 
       if(z[j] > zmax)
-    z[j] = zmax;
+	z[j] = zmax;
     }
 
   hookup(r->next,       q, z, tr->numBranches);
@@ -157,6 +162,15 @@ static void testInsertBranch(tree *tr, nodeptr r, int branchNumber, boolean doSm
   newviewGeneric(tr, r);
 
 #ifdef _PROFILE_L1OUT
+  newview_vcount += (tr->td[0].count-1);
+//  printf("Insert branch: %d %d    vecs: %d\n", q->number, x->number, tr->td[0].count-1);
+
+//  for(j = 1; j < tr->td[0].count; j++)
+//    printf("td: %d, parent: %d, children: %d %d\n", j, tr->td[0].ti[j].pNumber, tr->td[0].ti[j].qNumber, tr->td[0].ti[j].rNumber);
+//
+//  if (newview_vcount > 100)
+//    exit(0);
+
   newviewTime += gettime() - lastTime;
   lastTime = gettime();
 #endif
@@ -169,7 +183,9 @@ static void testInsertBranch(tree *tr, nodeptr r, int branchNumber, boolean doSm
   lastTime = gettime();
 #endif
 
+//  tr->useFastEvaluate = !doSmoothing;
   result = evaluateGeneric(tr, r);
+  tr->useFastEvaluate = FALSE;
 
 #ifdef _PROFILE_L1OUT
   evalTime += gettime() - lastTime;
@@ -177,6 +193,8 @@ static void testInsertBranch(tree *tr, nodeptr r, int branchNumber, boolean doSm
 
   brInfo[branchNumber].lh = result;
   brInfo[branchNumber].pendantBranchLen = getBranch(tr, r->z, r->back->z);
+
+//  printf("branch %d, lh %f\n", brInfo[branchNumber].branchNumber, brInfo[branchNumber].lh);
 
   hookup(q, x, qz, tr->numBranches);
 
@@ -200,21 +218,31 @@ int branchInfoCompare(const void *p1, const void *p2)
 
 static void setupNodeBranches(tree *tr, nodeptr p, LeaveBranchInfo *brInfo)
 {
-    if(!isTip(p->number, tr->mxtips))
+  if(!isTip(p->number, tr->mxtips))
       {
         setupNodeBranches(tr, p->next->back, brInfo);
         setupNodeBranches(tr, p->next->next->back, brInfo);
       }
 
-    branchNodeMap[tr->branchCounter] = p;
-    brInfo[tr->branchCounter].branchNumber = tr->branchCounter;
-    tr->branchCounter++;
+  branchNodeMap[tr->branchCounter] = p;
+  brInfo[tr->branchCounter].branchNumber = tr->branchCounter;
+  tr->branchCounter++;
+
+//  printf("%d ", p->number);
 }
 
 static void initBranchInfo(tree *tr, LeaveBranchInfo *brInfo)
 {
     nodeptr
       originalNode = tr->nodep[tr->mxtips + 1];
+
+//    nodeptr
+//      tip = findAnyTip(tr->nodep[tr->mxtips + 1], tr->mxtips);
+//
+//    nodeptr
+//      originalNode = tip->back;
+
+    printf("Start node: %d %d %d\n", originalNode->back->number, originalNode->next->back->number, originalNode->next->next->back->number);
 
     tr->branchCounter = 0;
 
@@ -298,23 +326,25 @@ void leaveOneOutTest(tree *tr, analdef *adef)
     sortTime;
 
   int
-    newviewFast,
-    newviewSlow;
+    newviewFast = 0,
+    newviewSlow = 0;
 #endif
 
 int
-  startTip,
-  endTip;
+  globalStartTip = (adef->l1outStartTip > 0) ? adef->l1outStartTip : 1,
+  globalEndTip = (adef->l1outEndTip > 0) ? adef->l1outEndTip : tr->mxtips,
+  localStartTip,
+  localEndTip;
 
 #ifdef _SATIVA_MPI
-  int slice = tr->mxtips / processes + 1;
-  startTip = processID * slice + 1;
-  endTip = MIN(tr->mxtips, (processID + 1) * slice);
+  int slice = (globalEndTip - globalStartTip) / processes + 1;
+  localStartTip = globalStartTip + processID * slice;
+  localEndTip = MIN(globalEndTip, globalStartTip + (processID + 1) * slice - 1);
 
   printBothOpen("Running in MPI mode: each of %d processes will process %d taxa\n\n", processes, slice);
 #else
-  startTip = 1;
-  endTip = tr->mxtips;
+  localStartTip = globalStartTip;
+  localEndTip = globalEndTip;
 #endif
 
   double
@@ -323,7 +353,7 @@ int
     slowStartTime;
 
   /* prune and re-insert one tip at a time into all branches of the remaining tree */
-  for(tips = startTip; tips <= endTip; tips++)
+  for(tips = localStartTip; tips <= localEndTip; tips++)
   {
 
 #ifdef _PROFILE_L1OUT
@@ -332,15 +362,19 @@ int
       evalTime = 0.;
       smoothTime = 0.;
       tr->mr_thresh = 0;
+      newview_vcount = 0;
 #endif
 
       tipStartTime = gettime();
 
       nodeptr
         myStart,
-        p = tr->nodep[tips]->back, /* this is the node at which we are pruning */
+	tipNode = tr->nodep[tips],
+        p = tipNode->back, /* this is the node at which we are pruning */
         p1 =  p->next->back,
         p2 =  p->next->next->back;
+
+//      printf("Pruning tip: %d, parent: %d\n", tipNode->number, p->number);
 
       double
         pz[NUM_BRANCHES],
@@ -361,6 +395,9 @@ int
           brInfo[i].branchNumber = i;
           brInfo[i].lh = unlikely;
       }
+
+      /* precompute tip */
+//      precomputeTipEvalVectorGeneric(tr, tipNode);
 
       /* prune the taxon, optimizing the branch between p1 and p2 */
       removeNodeBIG(tr, p,  tr->numBranches);
@@ -383,8 +420,8 @@ int
       }
 
 #ifdef _PROFILE_L1OUT
-      newviewFast = tr->mr_thresh;
-      tr->mr_thresh = 0;
+      newviewFast = newview_vcount;
+      newview_vcount = 0;
       fastInsertTime = gettime() - lastTime;
       lastTime = gettime();
 #endif
@@ -417,8 +454,8 @@ int
 //          }
 
 #ifdef _PROFILE_L1OUT
-          newviewSlow = tr->mr_thresh;
-          tr->mr_thresh = 0;
+          newviewSlow = newview_vcount;
+          newview_vcount = 0;
           insertTime = gettime() - lastTime;
           lastTime = gettime();
 #endif
@@ -499,15 +536,18 @@ int
       }
 
       fprintf(jsonFile, "], \"n\":[\"%s\"]}", tr->nameList[tips]);
-      if (tips == endTip)
+      if (tips == localEndTip)
           fprintf(jsonFile, "\n");
       else
           fprintf(jsonFile, ",\n");
 
-      if ((tips - startTip - 1) % 10 == 0)
+      if ((tips - localStartTip - 1) % 10 == 0)
 	{
   	  fflush(jsonFile);
   	  tr->ckp.state = EPA_L1OUT;
+#ifdef _SATIVA_MPI
+          if (processID == 0)
+#endif
 	  writeCheckpoint(tr);
 	}
 
@@ -517,7 +557,7 @@ int
 
 #ifdef _PROFILE_L1OUT
       double finalizeTime = gettime() - lastTime;
-      printBothOpen("newview calls fast/slow: %d %d\n", newviewFast, newviewSlow);
+      printBothOpen("newview vectors fast/slow: %d %d\n", newviewFast, newviewSlow);
       printBothOpen("Elapsed time: %f %f %f %f %f \n", fastInsertTime, fastSortTime, insertTime, sortTime, finalizeTime);
       printBothOpen("newview/smooth/eval time: %f %f %f\n\n", newviewTime, smoothTime, evalTime);
 #endif

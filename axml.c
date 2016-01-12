@@ -8941,7 +8941,8 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
 	}
       break;
     case THREAD_PRECOMPUTE_TIPEVAL:
-      precomputeTipEvalVector_GTRCAT(localTree, tr->insertNode);
+//      precomputeTipEvalVector_GTRCAT(localTree, tr->insertNode);
+      assert(0);
       break;
     case THREAD_NEWVIEW_MASKED:
       sendTraversalInfo(localTree, tr);

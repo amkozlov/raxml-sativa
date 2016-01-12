@@ -8206,7 +8206,7 @@ static void finalizeInfoFile(tree *tr, analdef *adef)
 	  else	    
 	    printBothOpen("\n\nOverall Time for Tree Evaluation %f\n", t);
 	  
-	  printBothOpen("Final GAMMA  likelihood: %f\n", tr->likelihood);
+	  printBothOpen("Final %s  likelihood: %f\n", tr->likelihood, tr->rateHetModel != CAT ? "GAMMA" : "CAT");
 
 	  {
 	    boolean

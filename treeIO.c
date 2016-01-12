@@ -1873,9 +1873,12 @@ void getStartingTree(tree *tr, analdef *adef)
 	      evaluateGenericInitrav(tr, tr->start);
 	      if (adef->verbose)
 	        printBothOpen("Initial LH: %f, optimizing branch lengths...\n", tr->likelihood);
-	      treeEvaluate(tr, 1);
-	      if (adef->verbose)
-	        printBothOpen("LH after optimization: %f\n", tr->likelihood);
+	      if (adef->mode != EPA_LEAVE_ONE_OUT)
+		{
+		  treeEvaluate(tr, 1);
+		  if (adef->verbose)
+		    printBothOpen("LH after optimization: %f\n", tr->likelihood);
+		}
 	    }
 	}
                

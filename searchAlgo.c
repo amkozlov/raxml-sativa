@@ -1563,7 +1563,7 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
 	{
 	  int bCounter = 0;	      
 	  
-	  if(fastIterations > 1)
+//	  if(fastIterations > 1)
 	    cleanupHashTable(tr->convHashT, (fastIterations % 2));
 	  
 	  bitVectorInitravSpecial(tr->bitVectors, tr->nodep[1]->back, tr->mxtips, tr->vLength, tr->convHashT, fastIterations % 2, BIPARTITIONS_RF, (branchInfo *)NULL,
@@ -1869,15 +1869,6 @@ CLEANUP:
   }
 #endif
  
-  
-  if(tr->searchConvergenceCriterion)
-    {
-      freeBitVectors(tr->bitVectors, 2 * tr->mxtips);
-      rax_free(tr->bitVectors);
-      freeHashTable(tr->convHashT);
-      rax_free(tr->convHashT);
-    }
-  
   freeBestTree(bestT);
   rax_free(bestT);
   freeBestTree(bt);

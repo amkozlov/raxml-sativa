@@ -687,7 +687,6 @@ static inline void computeVectorGTRCATSECONDARY_7(double *lVector, int *eVector,
   }
 }
 
-
 static inline void computeVectorGTRCAT(double *lVector, int *eVector, double ki, int i, double qz, double rz,
 				       traversalInfo *ti, double *EIGN, double *EI, double *EV, double *tipVector, 
 				       unsigned char **yVector, int mxtips)
@@ -767,7 +766,79 @@ static inline void computeVectorGTRCAT(double *lVector, int *eVector, double ki,
   return;
 }
 
+static inline void computeVectorGTRCAT_FAST(double *lVector, int *eVector, double ki, int i,
+				       traversalInfo *ti, double *EI, double *EV, double *tipVector,
+				       unsigned char **yVector, int mxtips, double *expVector1, double* expVector2)
+{
+  double  d1[3], d2[3],  ump_x1, ump_x2, x1px2[4], lz1, lz2;
+  double *x1, *x2, *x3;
+  int j, k,
+    pNumber = ti->pNumber,
+    rNumber = ti->rNumber,
+    qNumber = ti->qNumber;
 
+  x3  = &lVector[4 * (pNumber  - mxtips)];
+
+
+  switch(ti->tipCase)
+    {
+    case TIP_TIP:
+      x1 = &(tipVector[4 * yVector[qNumber][i]]);
+      x2 = &(tipVector[4 * yVector[rNumber][i]]);
+      break;
+    case TIP_INNER:
+      x1 = &(tipVector[4 * yVector[qNumber][i]]);
+      x2 = &lVector[4 * (rNumber - mxtips)];
+      break;
+    case INNER_INNER:
+      x1 = &lVector[4 * (qNumber - mxtips)];
+      x2 = &lVector[4 * (rNumber - mxtips)];
+      break;
+    default:
+      assert(0);
+    }
+
+  for(j = 0; j < 3; j++)
+    {
+      d1[j] = x1[j + 1] * expVector1[j];
+      d2[j] = x2[j + 1] * expVector2[j];
+    }
+
+
+  for(j = 0; j < 4; j++)
+    {
+      ump_x1 = x1[0];
+      ump_x2 = x2[0];
+      for(k = 0; k < 3; k++)
+	{
+	  ump_x1 += d1[k] * EI[j * 3 + k];
+	  ump_x2 += d2[k] * EI[j * 3 + k];
+	}
+      x1px2[j] = ump_x1 * ump_x2;
+    }
+
+  for(j = 0; j < 4; j++)
+    x3[j] = 0.0;
+
+  for(j = 0; j < 4; j++)
+    for(k = 0; k < 4; k++)
+      x3[k] +=  x1px2[j] *  EV[4 * j + k];
+
+
+  if (x3[0] < minlikelihood && x3[0] > minusminlikelihood &&
+      x3[1] < minlikelihood && x3[1] > minusminlikelihood &&
+      x3[2] < minlikelihood && x3[2] > minusminlikelihood &&
+      x3[3] < minlikelihood && x3[3] > minusminlikelihood)
+    {
+      x3[0]   *= twotothe256;
+      x3[1]   *= twotothe256;
+      x3[2]   *= twotothe256;
+      x3[3]   *= twotothe256;
+      *eVector = *eVector + 1;
+    }
+
+  return;
+}
 
 
 
@@ -893,7 +964,7 @@ static double evaluatePartialGTRCAT_BINARY(int i, double ki, int counter,  trave
 static double evaluatePartialGTRCAT(int i, double ki, int counter,  traversalInfo *ti, double qz,
 				    int w, double *EIGN, double *EI, double *EV,
 				    double *tipVector, unsigned  char **yVector, 
-				    int branchReference, int mxtips)
+				    int branchReference, int mxtips, double* expVector)
 {
   double lz, term;       
   double  d[3];
@@ -907,11 +978,26 @@ static double evaluatePartialGTRCAT(int i, double ki, int counter,  traversalInf
      
   x1 = &(tipVector[4 *  yVector[trav->pNumber][i]]);   
 
-  for(k = 1; k < counter; k++)                
-    computeVectorGTRCAT(lVector, &scale, ki, i, ti[k].qz[branchReference], ti[k].rz[branchReference], &ti[k], 
-			EIGN, EI, EV, 
-			tipVector, yVector, mxtips);       
-   
+  if (!expVector)
+    {
+      for(k = 1; k < counter; k++)
+        computeVectorGTRCAT(lVector, &scale, ki, i, ti[k].qz[branchReference], ti[k].rz[branchReference], &ti[k],
+    			EIGN, EI, EV,
+    			tipVector, yVector, mxtips);
+    }
+  else
+    {
+      for(k = 1; k < counter; k++)
+	{
+	  double
+	    *ev1 = &expVector[k*6],
+	    *ev2 = &expVector[k*6+3];
+
+	  computeVectorGTRCAT_FAST(lVector, &scale, ki, i, &ti[k], EI, EV,
+			tipVector, yVector, mxtips, ev1, ev2);
+	}
+    }
+
   x2 = &lVector[4 * (trav->qNumber - mxtips)]; 
 
   assert(0 <=  (trav->qNumber - mxtips) && (trav->qNumber - mxtips) < mxtips);  
@@ -1354,9 +1440,12 @@ void determineFullTraversal(nodeptr p, tree *tr)
 
 
 
-
-
 double evaluatePartialGeneric (tree *tr, int i, double ki, int _model)
+{
+  return  evaluatePartialGeneric2 (tr, i, ki, _model, NULL);
+}
+
+double evaluatePartialGeneric2 (tree *tr, int i, double ki, int _model, double* expVector)
 {
   double result;
   int 
@@ -1396,7 +1485,8 @@ double evaluatePartialGeneric (tree *tr, int i, double ki, int _model)
 				     tr->partitionData[_model].EI, 
 				     tr->partitionData[_model].EV,
 				     tr->partitionData[_model].tipVector,
-				     tr->partitionData[_model].yVector, branchReference, tr->mxtips);
+				     tr->partitionData[_model].yVector, branchReference, tr->mxtips,
+				     expVector);
       break;
     case AA_DATA:
       result = evaluatePartialGTRCATPROT(index, ki, tr->td[0].count, tr->td[0].ti, tr->td[0].ti[0].qz[branchReference], 
@@ -1433,6 +1523,7 @@ double evaluatePartialGeneric (tree *tr, int i, double ki, int _model)
 						tr->partitionData[_model].EV,
 						tr->partitionData[_model].tipVector, 
 						tr->partitionData[_model].yVector, branchReference, tr->mxtips);
+      break;
     case GENERIC_32:
       result = evaluatePartialFlex(index, ki, tr->td[0].count, tr->td[0].ti, tr->td[0].ti[0].qz[branchReference], 
 				   tr->partitionData[_model].wgt[index],

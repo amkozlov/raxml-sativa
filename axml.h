@@ -1458,6 +1458,7 @@ extern void computeBootStopOnly(tree *tr, char *bootStrapFileName, analdef *adef
 extern boolean bootStop(tree *tr, hashtable *h, int numberOfTrees, double *pearsonAverage, unsigned int **bitVectors, int treeVectorLength, unsigned int vectorLength, analdef *adef);
 extern void computeConsensusOnly(tree *tr, char* treeSetFileName, analdef *adef, boolean computeIC);
 extern double evaluatePartialGeneric (tree *, int i, double ki, int _model);
+extern double evaluatePartialGeneric2 (tree *, int i, double ki, int _model, double* expVector);
 extern double evaluateGeneric (tree *tr, nodeptr p);
 extern void newviewGeneric (tree *tr, nodeptr p);
 extern void newviewGenericMulti (tree *tr, nodeptr p, int model);

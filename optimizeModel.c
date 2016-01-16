@@ -2244,6 +2244,13 @@ static void categorizePartition(tree *tr, rateCategorize *rc, int model, int low
 
 #ifdef _USE_PTHREADS
 
+void expVectorMultiply(double* expv, double* stepv, int size)
+{
+  int t;
+  for(t=1; t < size; t++)
+    expv[t] *= stepv[t];
+}
+
 void optRateCatPthreads(tree *tr, double lower_spacing, double upper_spacing, double *lhs, int n, int tid)
 {
   int 
@@ -2253,8 +2260,31 @@ void optRateCatPthreads(tree *tr, double lower_spacing, double upper_spacing, do
     localIndex,
     i;
 
+  double
+    expVectorSize = 6 * (tr->td[0].count+1),
+    *expVector = (double *)rax_malloc(sizeof(double) * expVectorSize),
+    *expVectorInit = (double *)rax_malloc(sizeof(double) * expVectorSize),
+    *expVectorLow = (double *)rax_malloc(sizeof(double) * expVectorSize),
+    *expVectorUp = (double *)rax_malloc(sizeof(double) * expVectorSize);
+
   for(model = 0; model < tr->NumberOfModels; model++)
-    {               
+    {
+      int j;
+      double
+        *EIGN =  tr->partitionData[model].EIGN;
+
+      int t;
+      for(t=1; t < tr->td[0].count; t++)
+	{
+	  for(j = 0; j < 3; j++)
+	    {
+	      expVectorLow[t*6+j] = 1. / EXP(EIGN[j] * tr->td[0].ti[t].qz[0] * lower_spacing);
+	      expVectorLow[t*6+3+j] = 1. / EXP(EIGN[j] * tr->td[0].ti[t].rz[0] * lower_spacing);
+	      expVectorUp[t*6+j] = EXP(EIGN[j] * tr->td[0].ti[t].qz[0] * upper_spacing);
+	      expVectorUp[t*6+3+j] = EXP(EIGN[j] * tr->td[0].ti[t].rz[0] * upper_spacing);
+	    }
+	}
+
       for(i = tr->partitionData[model].lower, localIndex = 0;  i < tr->partitionData[model].upper; i++)
 	{
 	  if(i % ((size_t)n) == ((size_t)tid))
@@ -2265,23 +2295,36 @@ void optRateCatPthreads(tree *tr, double lower_spacing, double upper_spacing, do
 	      const double epsilon = 0.00001;
 	      int k;	      
 	      
-	     
-
 	      tr->cdta->patrat[i] = tr->cdta->patratStored[i];     
 	      initialRate = tr->cdta->patrat[i];
 	      
-	      
+	      int t;
+	      for(t=1; t < tr->td[0].count; t++)
+		{
+		  double
+		    lz1 = tr->td[0].ti[t].qz[0] * initialRate,
+		    lz2 = tr->td[0].ti[t].rz[0] * initialRate;
+		  for(j = 0; j < 3; j++)
+		    {
+		      expVector[t*6+j] = EXP(EIGN[j] * lz1);
+		      expVector[t*6+3+j] = EXP(EIGN[j] * lz2);
+		    }
+		}
 
-	      initialLikelihood = evaluatePartialGeneric(tr, localIndex, initialRate, model); /* i is real i ??? */
+	      memcpy(expVectorInit, expVector, sizeof(double) * expVectorSize);
+
+	      initialLikelihood = evaluatePartialGeneric2(tr, localIndex, initialRate, model, expVector); /* i is real i ??? */
 	     
-	      
 	      leftLH = rightLH = initialLikelihood;
 	      leftRate = rightRate = initialRate;
 	      
 	      k = 1;
 	      
+	      expVectorMultiply(expVector, expVectorLow, expVectorSize);
+
 	      while((initialRate - k * lower_spacing > 0.0001) && 
-		    ((v = evaluatePartialGeneric(tr, localIndex, initialRate - k * lower_spacing, model)) 
+//  		    ((v = evaluatePartialGeneric2(tr, localIndex, initialRate - k * lower_spacing, model, NULL))
+		    ((v = evaluatePartialGeneric2(tr, localIndex, initialRate - k * lower_spacing, model, expVector))
 		     > leftLH) && 
 		    (fabs(leftLH - v) > epsilon))  
 		{	  
@@ -2292,12 +2335,19 @@ void optRateCatPthreads(tree *tr, double lower_spacing, double upper_spacing, do
 		  
 		  leftLH = v;
 		  leftRate = initialRate - k * lower_spacing;
-		  k++;	  
+		  k++;
+
+	          expVectorMultiply(expVector, expVectorLow, expVectorSize);
 		}      
-	      
+
+	      // restore expVector which correspond to the initial rate
+	      memcpy(expVector, expVectorInit, sizeof(double) * expVectorSize);
+
 	      k = 1;
 	      
-	      while(((v = evaluatePartialGeneric(tr, localIndex, initialRate + k * upper_spacing, model)) > rightLH) &&
+              expVectorMultiply(expVector, expVectorUp, expVectorSize);
+
+	      while(((v = evaluatePartialGeneric2(tr, localIndex, initialRate + k * upper_spacing, model, expVector)) > rightLH) &&
 		    (fabs(rightLH - v) > epsilon))    	
 		{
 #ifndef WIN32
@@ -2307,6 +2357,8 @@ void optRateCatPthreads(tree *tr, double lower_spacing, double upper_spacing, do
 		  rightLH = v;
 		  rightRate = initialRate + k * upper_spacing;	 
 		  k++;
+
+                  expVectorMultiply(expVector, expVectorUp, expVectorSize);
 		}           
 	      
 	      if(rightLH > initialLikelihood || leftLH > initialLikelihood)
@@ -2333,6 +2385,12 @@ void optRateCatPthreads(tree *tr, double lower_spacing, double upper_spacing, do
 	}
       assert(localIndex == tr->partitionData[model].width);    
     }
+
+  rax_free(expVector);
+  rax_free(expVectorInit);
+  rax_free(expVectorLow);
+  rax_free(expVectorUp);
+
 }
 
 
@@ -2342,6 +2400,7 @@ void optRateCatPthreads(tree *tr, double lower_spacing, double upper_spacing, do
 
 static void optRateCatModel(tree *tr, int model, double lower_spacing, double upper_spacing, double *lhs)
 {
+
   int lower = tr->partitionData[model].lower;
   int upper = tr->partitionData[model].upper;
   int i;
@@ -2351,7 +2410,7 @@ static void optRateCatModel(tree *tr, int model, double lower_spacing, double up
 	leftLH, rightLH, leftRate, rightRate, v;
       const double epsilon = 0.00001;
       int k;
-      
+
       tr->cdta->patrat[i] = tr->cdta->patratStored[i];     
       initialRate = tr->cdta->patrat[i];
       
@@ -2576,7 +2635,6 @@ void updatePerSiteRates(tree *tr, boolean scaleRates)
 
     }
   
-      
 #ifdef _USE_PTHREADS
       masterBarrier(THREAD_COPY_RATE_CATS, tr);
 #endif               
@@ -3521,6 +3579,7 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
 	printBothOpen("after br-len 2 %f\n", tr->likelihood);
       else
 	printBothOpen("after opt-scaler 2%f\n", tr->likelihood);
+      double st_time = gettime();
 #endif  
 
       switch(tr->rateHetModel)
@@ -3593,7 +3652,7 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
 
 #ifdef _DEBUG_MOD_OPT
 	  evaluateGenericInitrav(tr, tr->start); 
-	  printBothOpen("after cat-opt %f\n", tr->likelihood);
+	  printBothOpen("[%.3f s] after cat-opt %f\n", gettime() - st_time, tr->likelihood);
 	  if (adef->verbose && catOpt < 4)
 	    {
 	          printBothOpen("CAT rates: ");

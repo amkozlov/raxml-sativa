@@ -1823,19 +1823,28 @@ void getStartingTree(tree *tr, analdef *adef)
 	      treeReadLen(INFILE, tr, TRUE, FALSE, FALSE, adef, TRUE, FALSE);
 	      break;
 	    case CLASSIFY_ML:
+	      if(adef->useBinaryModelFile)
+		{
+		  treeReadLen(INFILE, tr, TRUE, FALSE, FALSE, adef, FALSE, FALSE);
+		}
+	      else
+		{
+		  treeReadLen(INFILE, tr, FALSE, FALSE, FALSE, adef, FALSE, FALSE);
+		}
+	      break;
 	    case EPA_LEAVE_ONE_OUT:
 	      if(adef->useBinaryModelFile)
 		{
-		  if(tr->saveMemory)				 
-		    treeReadLen(INFILE, tr, TRUE, FALSE, TRUE, adef, FALSE, FALSE);	          	       
-		  else		   
+		  if(tr->saveMemory)
+		    treeReadLen(INFILE, tr, TRUE, FALSE, TRUE, adef, FALSE, FALSE);
+		  else
 		    treeReadLen(INFILE, tr, TRUE, FALSE, FALSE, adef, FALSE, FALSE);
 		}
 	      else
 		{
-		  if(tr->saveMemory)				 
-		    treeReadLen(INFILE, tr, FALSE, FALSE, TRUE, adef, FALSE, FALSE);	          	       
-		  else		   
+		  if(tr->saveMemory)
+		    treeReadLen(INFILE, tr, FALSE, FALSE, TRUE, adef, FALSE, FALSE);
+		  else
 		    treeReadLen(INFILE, tr, FALSE, FALSE, FALSE, adef, FALSE, FALSE);
 		}
 	      break;

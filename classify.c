@@ -1427,7 +1427,7 @@ static void setupBranchMetaInfo(tree *tr, nodeptr p, int nTips, branchInfo *bInf
 	bInf[countBranches].epa->branchLengths[i] = p->z[i];
       
 #ifdef _USE_PTHREADS
-      if(!tr->doSubtreeEPA)
+      if(!tr->doSubtreeEPA && !tr->saveMemory)
 	{
 	  if(!p->back->x)
 	    newviewGeneric(tr, p->back);
@@ -1459,8 +1459,8 @@ static void setupBranchMetaInfo(tree *tr, nodeptr p, int nTips, branchInfo *bInf
 	bInf[countBranches].epa->branchLengths[i] = p->z[i];
 
 
-#ifdef _USE_PTHREADS  
-      if(!tr->doSubtreeEPA)
+#ifdef _USE_PTHREADS
+      if(!tr->doSubtreeEPA && !tr->saveMemory)
 	{
 	  if(!p->x)
 	    newviewGeneric(tr, p);            
@@ -1990,16 +1990,22 @@ void classifyML(tree *tr, analdef *adef)
  
 
 #ifdef _USE_PTHREADS
-  tr->contiguousVectorLength = getContiguousVectorLength(tr);
-  tr->contiguousScalingLength = getContiguousScalingLength(tr);
-  allocBranchX(tr);
-  masterBarrier(THREAD_INIT_EPA, tr);
+  if (!tr->saveMemory)
+    {
+      tr->contiguousVectorLength = getContiguousVectorLength(tr);
+      tr->contiguousScalingLength = getContiguousScalingLength(tr);
+      allocBranchX(tr);
+      masterBarrier(THREAD_INIT_EPA, tr);
+    }
 #endif 
  
   setupBranchInfo(tr, q);   
   
-#ifdef _USE_PTHREADS  	
-  masterBarrier(THREAD_FREE_VECTORS, tr); 
+#ifdef _USE_PTHREADS
+  if (!tr->saveMemory)
+    {
+      masterBarrier(THREAD_FREE_VECTORS, tr);
+    }
 #endif
 
   if(tr->useEpaHeuristics)
@@ -2009,9 +2015,14 @@ void classifyML(tree *tr, analdef *adef)
 	        
       printBothOpen("EPA heuristics: determining %d out of %d most promising insertion branches\n", heuristicInsertions, tr->numberOfBranches);	      
 
-#ifdef _USE_PTHREADS     
-      NumberOfJobs = tr->numberOfBranches;
-      masterBarrier(THREAD_INSERT_CLASSIFY, tr);
+#ifdef _USE_PTHREADS
+      if (!tr->saveMemory)
+        {
+	  NumberOfJobs = tr->numberOfBranches;
+	  masterBarrier(THREAD_INSERT_CLASSIFY, tr);
+        }
+      else
+	addTraverseRob(tr, r, q, FALSE);
 #else  		
       addTraverseRob(tr, r, q, FALSE);
 #endif
@@ -2020,9 +2031,14 @@ void classifyML(tree *tr, analdef *adef)
     }           
             
   
-#ifdef _USE_PTHREADS 
-  NumberOfJobs = tr->numberOfBranches;
-  masterBarrier(THREAD_INSERT_CLASSIFY_THOROUGH, tr);
+#ifdef _USE_PTHREADS
+  if (!tr->saveMemory)
+    {
+      NumberOfJobs = tr->numberOfBranches;
+      masterBarrier(THREAD_INSERT_CLASSIFY_THOROUGH, tr);
+    }
+  else
+    addTraverseRob(tr, r, q, TRUE);
 #else     
   addTraverseRob(tr, r, q, TRUE);
 #endif

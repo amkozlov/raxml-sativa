@@ -464,8 +464,8 @@ struct noderec;
 
 typedef struct epBrData
 {
-  int    *countThem;
-  int    *executeThem;
+  unsigned char    *countThem;
+  unsigned char    *executeThem;
   unsigned int *parsimonyScore;
   double *branches;
   double *distalBranches; 

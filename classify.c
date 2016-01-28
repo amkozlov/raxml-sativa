@@ -708,7 +708,7 @@ static void testInsertThorough(tree *tr, nodeptr r, nodeptr q)
           
 	  assert(distalLength <= originalBranchLength);
 	     
-	  tr->bInf[q->bInf->epa->branchNumber].epa->distalBranches[j] = distalLength;	  
+	  tr->bInf[q->bInf->epa->branchNumber].epa->distalBranches[j] = distalLength;
 	}
     }
 
@@ -797,6 +797,11 @@ static void addTraverseRob(tree *tr, nodeptr r, nodeptr q,
     testInsertThorough(tr, r, q);
   else    
     testInsertFast(tr, r, q);
+
+  tr->branchCounter++;
+
+  if (tr->branchCounter % 10000 == 0)
+    printBothOpen("Branches processed: %d\n", tr->branchCounter);
 
   if(!isTip(q->number, tr->rdta->numsp))
     {   
@@ -1918,13 +1923,16 @@ void classifyML(tree *tr, analdef *adef)
 	}
       assert(tr->ntips == tr->binaryFile_ntips);
       evaluateGenericInitrav(tr, tr->start);
-      //treeEvaluate(tr, 2);
+//      treeEvaluate(tr, 2);
     }
   else
     {
       evaluateGenericInitrav(tr, tr->start); 
   
       modOpt(tr, adef, TRUE, 1.0);
+
+      writeBinaryModel(tr, adef);
+      printResult(tr, adef, TRUE);
     }
 
   printBothOpen("\nLikelihood of reference tree: %f\n\n", tr->likelihood);
@@ -1935,22 +1943,33 @@ void classifyML(tree *tr, analdef *adef)
   markTips(tr->start,       perm, tr->mxtips);
   markTips(tr->start->back, perm ,tr->mxtips);
 
+  int
+    globalStartInsert = (adef->l1outStartTip > 0) ? adef->l1outStartTip : 1,
+    globalEndInsert = (adef->l1outEndTip > 0) ? adef->l1outEndTip : (tr->mxtips - tr->ntips),
+    currentInsert = 0;
+
   tr->numberOfTipsForInsertion = 0;
 
   for(i = 1; i <= tr->mxtips; i++)
     {
       if(perm[i] == 0)
 	{
-	  tr->inserts[tr->numberOfTipsForInsertion] = i;
-	  tr->numberOfTipsForInsertion = tr->numberOfTipsForInsertion + 1;
+	  currentInsert++;
+	  if (currentInsert >= globalStartInsert && currentInsert <= globalEndInsert)
+	    {
+	      tr->inserts[tr->numberOfTipsForInsertion] = i;
+	      tr->numberOfTipsForInsertion++;
+	    }
 	}
     }    
 
   rax_free(perm);
   
-  printBothOpen("RAxML will place %d Query Sequences into the %d branches of the reference tree with %d taxa\n\n",  tr->numberOfTipsForInsertion, (2 * tr->ntips - 3), tr->ntips);  
+  printBothOpen("RAxML will place %d Query Sequences (%d-%d) into the %d branches of the reference tree with %d taxa\n\n",
+		tr->numberOfTipsForInsertion, globalStartInsert, globalEndInsert, (2 * tr->ntips - 3), tr->ntips);
 
-  assert(tr->numberOfTipsForInsertion == (tr->mxtips - tr->ntips));      
+//  assert(tr->numberOfTipsForInsertion == (tr->mxtips - tr->ntips));
+  assert(tr->numberOfTipsForInsertion == (globalEndInsert - globalStartInsert + 1));
 
   tr->bInf              = (branchInfo*)rax_malloc((size_t)tr->numberOfBranches * sizeof(branchInfo)); 
 
@@ -1958,15 +1977,15 @@ void classifyML(tree *tr, analdef *adef)
     {      
       tr->bInf[i].epa = (epaBranchData*)rax_malloc(sizeof(epaBranchData));
 
-      tr->bInf[i].epa->countThem   = (int*)rax_calloc((size_t)tr->numberOfTipsForInsertion, sizeof(int));      
+      tr->bInf[i].epa->countThem   = (unsigned char*)rax_calloc((size_t)tr->numberOfTipsForInsertion, sizeof(unsigned char));
       
-      tr->bInf[i].epa->executeThem = (int*)rax_calloc((size_t)tr->numberOfTipsForInsertion, sizeof(int));
+      tr->bInf[i].epa->executeThem = (unsigned char*)rax_calloc((size_t)tr->numberOfTipsForInsertion, sizeof(unsigned char));
       
       for(j = 0; j < tr->numberOfTipsForInsertion; j++)
 	tr->bInf[i].epa->executeThem[j] = 1;
 
       tr->bInf[i].epa->branches          = (double*)rax_calloc((size_t)tr->numberOfTipsForInsertion, sizeof(double));   
-      tr->bInf[i].epa->distalBranches    = (double*)rax_calloc((size_t)tr->numberOfTipsForInsertion, sizeof(double)); 
+      tr->bInf[i].epa->distalBranches    = (double*)rax_calloc((size_t)tr->numberOfTipsForInsertion, sizeof(double));
          
       tr->bInf[i].epa->likelihoods = (double*)rax_calloc((size_t)tr->numberOfTipsForInsertion, sizeof(double));      
       tr->bInf[i].epa->branchNumber = i;
@@ -2015,6 +2034,8 @@ void classifyML(tree *tr, analdef *adef)
 	        
       printBothOpen("EPA heuristics: determining %d out of %d most promising insertion branches\n", heuristicInsertions, tr->numberOfBranches);	      
 
+      tr->branchCounter = 0;
+
 #ifdef _USE_PTHREADS
       if (!tr->saveMemory)
         {
@@ -2028,8 +2049,11 @@ void classifyML(tree *tr, analdef *adef)
 #endif
       
       consolidateInfoMLHeuristics(tr, heuristicInsertions);
+
+      printBothOpen("EPA heuristics finished in: %f s, starting thorough insertions\n\n", gettime() - masterTime);
     }           
             
+  tr->branchCounter = 0;
   
 #ifdef _USE_PTHREADS
   if (!tr->saveMemory)

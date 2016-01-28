@@ -7589,6 +7589,7 @@ void printResult(tree *tr, analdef *adef, boolean finalPrint)
 
       break;
     case BIG_RAPID_MODE:
+    case CLASSIFY_ML:
       if(!adef->boot)
 	{
 	  if(adef->multipleRuns > 1)
@@ -11242,7 +11243,7 @@ void readBinaryModel(tree *tr, analdef *adef)
 
   myfread(&compressPatterns, sizeof(boolean), 1, f);
   if(tr->rateHetModel == CAT && adef->compressPatterns && adef->mode == CLASSIFY_ML)
-    {     
+    {
       printf("\n\nError: You need to disable site pattern compression by specifying the \"-H\" command line option\n");
       printf("when generating and reading binary model checkpoints for the EPA under CAT!\n\n");
       errorExit(-1);
